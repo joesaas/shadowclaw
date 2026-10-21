@@ -13,7 +13,7 @@
 
 ## 阶段 1 已实现（执行层最小回路）
 
-代码在 `src/shadowclaw/`，按三层分包：`execution/`（本阶段实现）、`harness/` 与 `evaluation/`（占位，分别在阶段 2 / 阶段 4 落地）。仓库根的 `harness/` 是驾驭层内容正本（原则、手册），代码只经配置读取其路径，不写死。
+代码在 `src/shadowclaw/`，按三层分包：`execution/`（阶段 1）、`harness/`（阶段 2）、`evaluation/`（占位，阶段 4 落地）。仓库根的 `harness/` 是驾驭层内容正本，代码只经配置读取其路径，不写死。
 
 执行层模块（一个模块一个职责，接口为最小 Protocol，组装只在 CLI 入口）：
 
@@ -39,7 +39,7 @@
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-.venv/bin/python -m pytest            # 25 项测试
+.venv/bin/python -m pytest            # 40 项测试（阶段 1 的 25 + 阶段 2 的 15）
 
 .venv/bin/shadowclaw run              # 跑内置 demo 排障场景（离线）
 .venv/bin/shadowclaw run --plan plan.json   # 跑一个 JSON 计划文件
@@ -48,3 +48,37 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 配置走环境变量：`SHADOWCLAW_DB_PATH`（默认 `./shadowclaw.db`）、`SHADOWCLAW_HARNESS_DIR`（默认 `./harness`）、`SHADOWCLAW_MODEL`、`SHADOWCLAW_HARNESS_VERSION`、`SHADOWCLAW_BUDGET_HARD_CAP`。
+
+## 阶段 2 已实现（驾驭层 v1 + GitHub 接入，Jira 暂缓）
+
+**内容正本**（仓库根 `harness/`，阶段 0 审定材料落地）：
+
+| 正本 | 内容 |
+|---|---|
+| `memory/` | core.md（核心常驻）+ facts（19）/ projects（18）/ decisions（4）共 41 条事实 + inferences 13 条审定推断（带置信度与依据；驳回的 2 条不入）+ people（按审定口径暂空）+ proposals/（待批队列机制） |
+| `guardrails/guardrails.md` | 锁定级护栏：三级审批矩阵（read 自动 / write 攒批确认 / irreversible 单独确认）+ 预算顶 + 红线，frontmatter 带批准标记 |
+| `tools/github.md` | GitHub 工具卡：MCP 接入、凭证只写引用（`GITHUB_TOKEN` 环境变量名）、每个操作标风险级 |
+| `scenarios/troubleshooting.yaml` | 排障场景：组装唯一入口（原则全量 / 手册全文 / core+检索记忆 / GitHub 工具卡上限 read / 护栏合并从严） |
+
+**代码**（`src/shadowclaw/harness/` 五模块 + 执行层增量）：
+
+| 模块 | 职责 |
+|---|---|
+| `harness/loader.py` | 解析正本 + 加载时全量校验（引用缺失报错、锁定级文件校验批准标记缺失拒载）；按内容哈希算 harness 版本号（原则+护栏+场景文件） |
+| `harness/assembler.py` | 场景组装：原则（最前）→ 身份 → core 记忆 → 手册（执行单元全文 / 规划者摘要）→ 工具卡摘要 → 检索记忆；产出护栏策略对象与合并从严的预算顶 |
+| `harness/memory.py` | 记忆检索 v1：条目索引 + 关键词（英文词元 + 中文 bigram）命中排序；向量后置 |
+| `harness/guardrails.py` | 护栏矩阵 → 执行层 ApprovalPolicy：read→ALLOW、write→ASK（攒批先以 ASK 落地）、irreversible→ASK 且标单独确认、forbidden→DENY、矩阵外 ASK |
+| `harness/conflicts.py` | 事实落板冲突检查最小版：同键异值拒落板并标 conflict、留待人工裁决（经 `facts.py` 的 `commit_guard` 挂钩接入，编排器新增可选注入点） |
+| `execution/github_tools.py` | GitHub MCP 接入工厂（McpToolset + 远程端点 + 工具按风险级过滤挂载）；无 `GITHUB_TOKEN` 返回 None 并明确告警；FakeGitHub 假工具走相同注册路径供测试/demo |
+| `execution/demo2.py` | 阶段 2 验收演示：排障场景组装后跑「data-pipeline CI 失败排障」——脚本化 LLM 经假工具真调用只读集、落板出结论、写步骤（打标签）被护栏 ASK 拦下，全程轨迹带真实版本号 |
+
+版本号来源已换：`Config.from_env()` 不再用 `stage1-dev` 占位——未显式设置 `SHADOWCLAW_HARNESS_VERSION` 时按 harness 内容哈希现算（目录不存在时降级 `unversioned` 并在轨迹留痕）。直接构造 `Config` 的默认值保留占位（阶段 1 单测夹具口径）。
+
+### 跑法（阶段 2 增量）
+
+```bash
+.venv/bin/shadowclaw demo2            # 阶段 2 验收演示（离线，FakeGitHub）
+.venv/bin/python -m pytest            # 40 项测试（阶段 1 的 25 + 阶段 2 的 15）
+```
+
+**如实标注的出入**：GitHub 真实联调缺 token——本机无 `GITHUB_TOKEN`，MCP 工厂只验证了「无 token 诚实降级」与「有 token 能构造 toolset（惰性连接，未发起会话）」，端点连通性与真实工具清单未验；工具名与风险分级按官方 GitHub MCP 的常见命名与工具卡口径维护，联调时以服务端实际清单为准校对。Jira 按 li 决定暂缓（见 roadmap 阶段 2 补注）。

@@ -2,6 +2,8 @@
 
 用法：
   shadowclaw run [--plan plan.json]   跑一个计划文件；不给则跑内置 demo
+  shadowclaw demo2                    阶段 2 验收演示：排障场景组装 +
+                                      GitHub 假工具排障（离线）
   shadowclaw replay <run_id>          按轨迹复盘打印时间线
   shadowclaw resume <run_id>          从检查点续跑（单元注册表用 demo 集，
                                       阶段 1 范围；真实场景注册表随阶段 2）
@@ -18,6 +20,7 @@ from pathlib import Path
 from .checkpoint import SqliteCheckpointStore
 from .config import Config
 from .demo import DEMO_TASK, build_demo_plan, build_demo_registry
+from .demo2 import run_demo2
 from .orchestrator import Orchestrator
 from .plan import Plan
 from .trajectory import SqliteTrajectoryStore
@@ -49,6 +52,22 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     for out in result.outputs:
         print(f"\n[{out.step_id}] {out.unit_id}:\n{out.text}")
     return 0 if result.status == "success" else 1
+
+
+async def _cmd_demo2(args: argparse.Namespace) -> int:
+    config = Config.from_env()
+    run = await run_demo2(config)
+    result = run.result
+    print(f"驾驭层版本: {run.bundle.version}（内容哈希）")
+    print(f"run_id: {result.run_id}")
+    print(f"status: {result.status}（s5 写步骤被护栏 ASK 拦下时为 denied，"
+          "属预期）")
+    for out in result.outputs:
+        print(f"\n[{out.step_id}] {out.unit_id}:\n{out.text}")
+    print(f"\nGitHub 工具实际调用：{[name for name, _ in run.fake.calls]}")
+    print(f"事实冲突：{len(run.guard.conflicts)} 条")
+    print(f"复盘：shadowclaw replay {result.run_id}")
+    return 0
 
 
 async def _cmd_resume(args: argparse.Namespace) -> int:
@@ -102,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p_run = sub.add_parser("run", help="跑一个计划（默认内置 demo）")
     p_run.add_argument("--plan", help="计划 JSON 文件路径")
+    sub.add_parser("demo2", help="阶段 2 验收演示（排障场景 + GitHub 假工具）")
     p_replay = sub.add_parser("replay", help="按轨迹复盘一个 run")
     p_replay.add_argument("run_id")
     p_resume = sub.add_parser("resume", help="从检查点续跑一个 run")
@@ -109,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "run":
         return asyncio.run(_cmd_run(args))
+    if args.command == "demo2":
+        return asyncio.run(_cmd_demo2(args))
     if args.command == "resume":
         return asyncio.run(_cmd_resume(args))
     return _cmd_replay(args)

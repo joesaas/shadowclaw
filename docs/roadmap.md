@@ -35,6 +35,7 @@
 
 - harness/ 目录落地；经 MCP 接入 GitHub、Jira；先开排障场景。
 - 验收：处理一次真实排障，步骤与核对动作与手册一致。
+- **补注（2026-10-21 li 定）：Jira 暂缓，本阶段只接 GitHub。** 已落地：驾驭层内容正本补齐（memory 种子 41+13 条、guardrails、GitHub 工具卡、排障场景）与代码五模块（loader/assembler/memory/guardrails/conflicts）；GitHub 经 MCP 工厂接入（token 缺失诚实降级，未真实联调），离线验收 demo2 用 FakeGitHub 跑通「场景组装 → 只读工具真调用 → 写操作被护栏 ASK 拦下 → 轨迹带真实 harness 版本号」。
 
 ### 阶段 3 · 影子模式试运行
 

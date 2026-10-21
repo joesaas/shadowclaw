@@ -73,7 +73,8 @@ class Orchestrator:
                  config: Config,
                  approval_policy: ApprovalPolicy | None = None,
                  attended: bool = False,
-                 ask_handler: Callable[[str], bool] | None = None):
+                 ask_handler: Callable[[str], bool] | None = None,
+                 fact_commit_guard: Callable | None = None):
         self._registry = registry
         self._store = trajectory_store
         self._checkpoints = checkpoint_store
@@ -81,6 +82,9 @@ class Orchestrator:
         self._policy = approval_policy or FailClosedPolicy()
         self._attended = attended
         self._ask_handler = ask_handler
+        # 阶段 2 注入点：事实落板冲突检查（harness.conflicts 的 guard），
+        # 不给则行为同阶段 1（只去重）。
+        self._fact_guard = fact_commit_guard
 
     # ------------------------------------------------------------------ run
     async def run(self, plan_supplier: Callable[[], Plan], *, task: str,
@@ -98,7 +102,7 @@ class Orchestrator:
                       payload={"task": task, "degraded": degraded})
         recorder.emit(EventType.PLAN_VALIDATED, payload={
             "plan_id": plan.id, "degraded": degraded, "attempts": attempts})
-        board = FactBoard()
+        board = FactBoard(commit_guard=self._fact_guard)
         status = await self._execute(state, board, plan.steps, depth=0,
                                      seed_facts=[], run_id=run_id,
                                      start_index=0, top=True)
@@ -120,7 +124,7 @@ class Orchestrator:
             "from_step_index": cp.next_step_index})
         recorder.emit(EventType.PLAN_VALIDATED,
                       payload={"plan_id": plan.id, "resumed": True})
-        board = FactBoard()
+        board = FactBoard(commit_guard=self._fact_guard)
         board.restore(cp.facts)
         status = await self._execute(state, board, plan.steps, depth=0,
                                      seed_facts=[], run_id=run_id,
@@ -255,7 +259,7 @@ class Orchestrator:
                                "brief": step.input, "depth": depth + 1})
         # 隔离：子级用全新事实板，只带走父级已提交事实的只读快照作种子；
         # 子级的提议在子板内落板，返回时才由父级编排器登记到父板。
-        sub_board = FactBoard()
+        sub_board = FactBoard(commit_guard=self._fact_guard)
         sub_seed = list(dict.fromkeys(seed_facts + board.snapshot()))
         sub_steps = [
             Step(id=f"{step.id}/{s.id}", primitive=s.primitive, unit=s.unit,

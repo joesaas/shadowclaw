@@ -2,12 +2,15 @@
 
 语义（已拍板）：单元只能提议（propose），只有编排器能落板（commit）。
 本类因此只长在编排器手里——单元拿到的永远是已提交事实的只读快照文本，
-碰不到板子本身（迪米特）。落板这一关做去重；冲突检查留待阶段 2
-（驾驭层到位后按场景规则），此处先只记来源。
+碰不到板子本身（迪米特）。落板这一关做去重；冲突检查经 commit_guard
+挂钩接入（阶段 2 起由驾驭层 harness/conflicts.py 提供：同键异值拒落板、
+标 conflict、留给编排器/人工裁决，绝不静默覆盖）。未注入 guard 时行为
+与阶段 1 完全一致。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 
 @dataclass
@@ -16,7 +19,7 @@ class Fact:
     statement: str
     source_unit: str
     step_id: str
-    status: str = "proposed"           # proposed / committed
+    status: str = "proposed"           # proposed / committed / conflict
 
     def to_dict(self) -> dict:
         return {"id": self.id, "statement": self.statement,
@@ -34,6 +37,9 @@ class Fact:
 class FactBoard:
     _facts: list[Fact] = field(default_factory=list)
     _next_id: int = 1
+    # 冲突检查挂钩（阶段 2 注入点）：guard(候选事实, 已落板事实) -> 是否放行。
+    commit_guard: Callable[[Fact, list[Fact]], bool] | None = field(
+        default=None, repr=False, compare=False)
 
     # -- 提议（编排器代单元登记，单元本身不接触本对象） --------------------
     def propose(self, statement: str, *, source_unit: str,
@@ -46,10 +52,18 @@ class FactBoard:
 
     # -- 落板（仅编排器调用） ------------------------------------------------
     def commit(self, fact: Fact) -> bool:
-        """落板并去重：同陈述已提交过则不再重复入板，返回 False。"""
+        """落板：先去重，再过冲突检查挂钩（若注入）。
+
+        同陈述重复 → 返回 False（保持未落板，轨迹留痕即可）。
+        冲突（同键异值）→ 事实标 conflict、返回 False，绝不静默覆盖，
+        冲突详情由 guard 自己记录，交编排器/人工裁决。"""
         if any(f.status == "committed" and f.statement == fact.statement
                for f in self._facts):
             fact.status = "proposed"   # 保持未落板，轨迹里留痕即可
+            return False
+        if (self.commit_guard is not None
+                and not self.commit_guard(fact, self.committed())):
+            fact.status = "conflict"
             return False
         fact.status = "committed"
         return True
