@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shadowclaw"
+version = "0.1.0"
+description = "ShadowClaw — li 的个人分身 agent（三层架构：执行层 / 驾驭层 / 评估层）"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk==2.12.*",
+    "litellm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+shadowclaw = "shadowclaw.execution.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
