@@ -94,12 +94,13 @@ def ensure_openrouter_api_key() -> bool:
     return False
 
 
-def build_litellm_model(model_slug: str, *, max_tokens: int = 1000):
+def build_litellm_model(model_slug: str, *, max_tokens: int = 4000):
     """OpenRouter slug（如 google/gemini-3.8-flash）→ ADK LiteLlm 实例。
 
-    max_tokens 必须显式压小：ADK/LiteLlm 默认预留 65536，OpenRouter 按
-    预留额计价，key 额度稍紧就直接 402（harness2-demo 同型教训）。
-    kwargs 经 LiteLlm 的 _additional_args 透传到 completion 参数。
+    max_tokens 必须显式设：ADK/LiteLlm 默认预留 65536，OpenRouter 按
+    预留额计价，key 额度紧时直接 402（harness2-demo 同型教训）；但压到
+    1000 会把答复截断在结论之前（2026-10-21 首轮回放实测），4000 是
+    当前 key 限额下的平衡点。kwargs 经 LiteLlm 透传到 completion 参数。
     """
     from google.adk.models.lite_llm import LiteLlm
     name = model_slug if model_slug.startswith("openrouter/") \
