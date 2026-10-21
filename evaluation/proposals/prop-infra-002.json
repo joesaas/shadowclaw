@@ -1,0 +1,27 @@
+{
+ "id": "prop-infra-002",
+ "title": "判定仪表修复：certainty 判定去脆（结论段语义核查门）与根因同义表达组数据补齐",
+ "target_files": [
+  "src/shadowclaw/evaluation/regression.py",
+  "evaluation/regression/cases/*.yaml"
+ ],
+ "diff": "（评估层工具链改动，diff 见本轮代码提交：certainty 仅当关键词未中且结论段语义核查（结论段抽取 + 案例 scoring.semantic_groups 同义组规则匹配）也未中时成立；6 个案例文件新增 semantic_groups 仪表数据，参照标注（root_cause / key_actions / root_cause_groups）未动。）",
+ "change_class": "infra",
+ "evidence_signal_ids": [
+  "sig-1a7edc0ae1",
+  "sig-77c3ebdb28"
+ ],
+ "attribution": {
+  "phenomenon": "语义已命中根因的答复因关键词组未全中被记 certainty_without_evidence（ec2 / github 案）",
+  "layer": "评估层工具链（判定仪表）",
+  "file": "src/shadowclaw/evaluation/regression.py"
+ },
+ "expected_effect": "ec2 / github 类案例的 certainty 误报消除；真未核实断言（语义也未中且确定口吻）仍被记",
+ "expected_side_effect": "语义核查是规则同义组，覆盖不了组外新说法——这类答复仍可能被记 certainty，靠后续轮次扩充 semantic_groups 收敛，不放松命中口径本身",
+ "edits": [],
+ "status": "merged",
+ "harness_version_base": "h-3b9b34e9cf",
+ "created_at": "2026-10-21T08:43:26.516853+00:00",
+ "merged_files": [],
+ "notes": "评估层工具链改动，已随本轮代码落地，不走驾驭层合入（单列 infra 口径）"
+}

@@ -308,7 +308,10 @@ async def run_shadow(*, cases: list[RegressionCase], bundle: HarnessBundle,
             run.cases.append(cr)
             continue
 
-        cr.check = check_answer(case, cr.answer)
+        cr.check = check_answer(
+            case, cr.answer,
+            extra_sources=[assembled.playbook_full, assembled.core_memory,
+                           *(e.render() for e in assembled.memory_hits)])
         cr.deviations = attribute_deviations(case, cr.check)
         for dev in cr.deviations:
             dev.trace_id = cr.run_id

@@ -1,0 +1,26 @@
+{
+ "id": "prop-infra-001",
+ "title": "判定仪表修复：编造核查的合法来源扩展到全部组装材料（含单位换算与建议性语境豁免）",
+ "target_files": [
+  "src/shadowclaw/evaluation/regression.py",
+  "src/shadowclaw/evaluation/shadow.py"
+ ],
+ "diff": "（评估层工具链改动，diff 见本轮代码提交：regression.py 的 check_answer 增加 extra_sources 入参，合法数值来源 = 简报+材料+手册全文+core 记忆；带单位数值按 SI 换算同族比对、相对误差 ≤5% 视为同源；建议性语境中的数值豁免。shadow.py 传入组装材料。）",
+ "change_class": "infra",
+ "evidence_signal_ids": [
+  "sig-369cd0dd7e"
+ ],
+ "attribution": {
+  "phenomenon": "编造核查把手册来源数值误报为编造数据（write-false-success 案 15.6KB ↔ 材料 15,683 字节）",
+  "layer": "评估层工具链（判定仪表）",
+  "file": "src/shadowclaw/evaluation/regression.py"
+ },
+ "expected_effect": "write-false-success 类案例的 fabricated_metric误报消除；真编造（材料全无来源的数值）仍被查出",
+ "expected_side_effect": "合法来源变宽后，真编造若恰与手册中某数值换算后接近（≤5%）会被放过——靠数值必须带单位同族比对收窄此风险",
+ "edits": [],
+ "status": "merged",
+ "harness_version_base": "h-3b9b34e9cf",
+ "created_at": "2026-10-21T08:43:26.515658+00:00",
+ "merged_files": [],
+ "notes": "评估层工具链改动，已随本轮代码落地，不走驾驭层合入（单列 infra 口径）"
+}

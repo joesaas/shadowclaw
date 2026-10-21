@@ -1,0 +1,138 @@
+{
+ "round_id": "001",
+ "harness_version": "h-3b9b34e9cf",
+ "model": "google/gemini-3.8-flash",
+ "verdict": "rejected",
+ "baseline": [
+  {
+   "case_id": "datapipeline-info-page-404",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.046305,
+   "run_id": "1bec32aae452"
+  },
+  {
+   "case_id": "docreader-env-not-loaded",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.041758500000000004,
+   "run_id": "b72afbc596f3"
+  },
+  {
+   "case_id": "ec2-node-version-too-old",
+   "status": "completed",
+   "hit": true,
+   "covered": 4,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.0469455,
+   "run_id": "4b65fe74f68c"
+  },
+  {
+   "case_id": "github-app-no-create-permission",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.042348000000000004,
+   "run_id": "eff3cd09efaf"
+  },
+  {
+   "case_id": "telegram-hook-log-array",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.042936,
+   "run_id": "e97c742d08dc"
+  },
+  {
+   "case_id": "write-false-success",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.036882,
+   "run_id": "b0401df07544"
+  }
+ ],
+ "candidate": [
+  {
+   "case_id": "datapipeline-info-page-404",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.051327,
+   "run_id": "11d1c303f71e"
+  },
+  {
+   "case_id": "docreader-env-not-loaded",
+   "status": "completed",
+   "hit": true,
+   "covered": 4,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.0508425,
+   "run_id": "767b20a629e4"
+  },
+  {
+   "case_id": "ec2-node-version-too-old",
+   "status": "completed",
+   "hit": true,
+   "covered": 4,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.044401499999999997,
+   "run_id": "abc61c5a1df8"
+  },
+  {
+   "case_id": "github-app-no-create-permission",
+   "status": "completed",
+   "hit": false,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.038772,
+   "run_id": "a1930232fdcd"
+  },
+  {
+   "case_id": "telegram-hook-log-array",
+   "status": "completed",
+   "hit": true,
+   "covered": 2,
+   "total": 4,
+   "principle_errors": 0,
+   "cost": 0.042312,
+   "run_id": "af555a055ae9"
+  },
+  {
+   "case_id": "write-false-success",
+   "status": "completed",
+   "hit": true,
+   "covered": 3,
+   "total": 3,
+   "principle_errors": 0,
+   "cost": 0.053856,
+   "run_id": "5d6cce999f36"
+  }
+ ],
+ "regressions": [
+  "github-app-no-create-permission：结论命中由真变假",
+  "telegram-hook-log-array：动作覆盖下降 3/4 → 2/4"
+ ],
+ "merged_files": [],
+ "baseline_cost": 0.257175,
+ "candidate_cost": 0.281511,
+ "stopped_reason": ""
+}

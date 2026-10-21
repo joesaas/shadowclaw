@@ -32,6 +32,11 @@ scoring:
     - ["数组"]
     - ["对象"]
     - ["唤醒", "wake", "worker", "消费之后", "取走之后"]
+  semantic_groups:
+    - ["log()"]
+    - ["数组"]
+    - ["对象"]
+    - ["唤醒", "wake", "worker", "消费之后", "取走之后", "消费后", "回复之前"]
   actions:
     - id: segment-the-chain
       label: 按链路段定位故障段

@@ -1,0 +1,17 @@
+{
+ "prop-infra-001": {
+  "status": "merged",
+  "class": "infra",
+  "title": "判定仪表修复：编造核查的合法来源扩展到全部组装材料（含单位换算与建议性语境豁免）"
+ },
+ "prop-infra-002": {
+  "status": "merged",
+  "class": "infra",
+  "title": "判定仪表修复：certainty 判定去脆（结论段语义核查门）与根因同义表达组数据补齐"
+ },
+ "prop-lesson-001": {
+  "status": "rejected",
+  "class": "lesson",
+  "title": "手册补条目：排障答复与修复建议须写到可执行粒度（telegram-hook-log-array 两轮覆盖缺口）"
+ }
+}

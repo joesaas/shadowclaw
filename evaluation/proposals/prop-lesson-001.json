@@ -1,0 +1,32 @@
+{
+ "id": "prop-lesson-001",
+ "title": "手册补条目：排障答复与修复建议须写到可执行粒度（telegram-hook-log-array 两轮覆盖缺口）",
+ "target_files": [
+  "harness/playbooks/troubleshooting.md"
+ ],
+ "diff": "--- a/harness/playbooks/troubleshooting.md\n+++ b/harness/playbooks/troubleshooting.md\n@@ -68,7 +68,7 @@\n \n 1. **配置写了，进程没读到**——案例：DocReader 鉴权闭环（2026-10-12）：鉴权代码已推送、Key 也设了，但服务原本不读 `.env`，Key 进不了运行进程，线上 `auth.required` 一直为 false。最后靠公网探针定位（无 Key DELETE 应回 401 却回 404），给服务加启动加载 `.env` 后才闭环。教训：配置问题先验「进程实际读到了什么」，用外部探针验生效，不看代码改没改。\n 2. **工具报成功，文件没落盘**——案例：收录清单写入假成功（2026-10-12）：一次 write 回执报告写入 15,683 字节成功，全盘查找文件实际不存在，最终改用分段写入并逐段核验。教训：大文件写入后必须回读核验（大小、章节完整性），不轻信单次回执。\n-3. **表象是「消息丢了」，根因是一个参数类型**——案例：Telegram 自动回复 hook 失效（2026-10-07）：消息已被 hook 取走、水位已推进，但脚本把 `log()` 的 fields 传成 JSON 数组（运行时要求对象），在 `set -e` 下死在唤醒 worker 之前；而该链路是破坏性读取，消息消费即不可回取。教训：链路型系统按段定位，不要盯着表象层；破坏性读取的环节，消费前先想好保全与回放。\n+3. **表象是「消息丢了」，根因是一个参数类型**——案例：Telegram 自动回复 hook 失效（2026-10-07）：消息已被 hook 取走、水位已推进，但脚本把 `log()` 的 fields 传成 JSON 数组（运行时要求对象），在 `set -e` 下死在唤醒 worker 之前；而该链路是破坏性读取，消息消费即不可回取。教训：链路型系统按段定位，不要盯着表象层；破坏性读取的环节，消费前先想好保全与回放。答复与修复建议要写到可执行粒度：点名出错的那一步与参数，并给出具体改法（如把 log() 的 fields 由数组改为对象包裹 {count, messages}），不只说「参数类型不对」。\n 4. **报错栈崩在工具自己身上，先查环境版本**——案例：data-pipeline 在 EC2 首构建失败（2026-10-20）：TypeScript 编译器自身崩在 `??` 语法，根因是服务器 Node 版本低于 14，而项目要求 Node ≥ 22，非代码问题。修复除了升级版本，还加了 prebuild 版本检查，让下次直接报人话错误而不是解析栈。教训：先看报错崩在哪一层；环境前置条件（版本）先核对，再怀疑代码。\n 5. **同类操作两次 403，是能力边界不是 bug**——案例：GitHub App 权限边界（2026-10-14）：`create_repository` 与 `fork_repository` 均返回 403 `Resource not accessible by integration`——该 App 本就无建仓/fork 权限。教训：同类 403 先查能力边界，不要在调用层反复重试；改走可行路线（人工建仓后推送），并把边界写进工具备忘。\n 6. **验证证据本身会骗人**——案例：muse-design-site 截图串图事件（2026-10-16）：验收截图里出现页面上根本不存在的层名，重拍还返回同一张错图（文件哈希相同）；最终以 curl 直读线上文件与本地逐字节一致定案。教训：截图可能被缓存误导或串图；证据冲突时以哈希、grep、直读为准，截图核验要带缓存绕过。",
+ "change_class": "lesson",
+ "evidence_signal_ids": [
+  "sig-8cb63d8c14",
+  "sig-529ac07367"
+ ],
+ "attribution": {
+  "phenomenon": "关键动作覆盖持续不足（最近一轮 2/4），答复讲清根因但修复动作没写到可执行粒度",
+  "layer": "手册",
+  "file": "harness/playbooks/troubleshooting.md"
+ },
+ "expected_effect": "telegram-hook-log-array 案例动作覆盖期望由 2/4 提升（命中「对象包裹」或「按段定位」类动作）",
+ "expected_side_effect": "手册变长（组装提示约 +90 字，成本可忽略）；答复风格可能被带向其他案例——靠整轮回归门看其余案例分项是否退步",
+ "edits": [
+  {
+   "file": "playbooks/troubleshooting.md",
+   "old": "教训：链路型系统按段定位，不要盯着表象层；破坏性读取的环节，消费前先想好保全与回放。",
+   "new": "教训：链路型系统按段定位，不要盯着表象层；破坏性读取的环节，消费前先想好保全与回放。答复与修复建议要写到可执行粒度：点名出错的那一步与参数，并给出具体改法（如把 log() 的 fields 由数组改为对象包裹 {count, messages}），不只说「参数类型不对」。"
+  }
+ ],
+ "status": "rejected",
+ "harness_version_base": "h-3b9b34e9cf",
+ "created_at": "2026-10-21T08:43:26.517888+00:00",
+ "merged_files": [],
+ "notes": "整轮判定拒绝（负教训存档）：github-app-no-create-permission：结论命中由真变假；telegram-hook-log-array：动作覆盖下降 3/4 → 2/4。同类改动再次提炼时须先回应本条被拒原因（设计 Step 6.5）。"
+}

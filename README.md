@@ -13,7 +13,7 @@
 
 ## 阶段 1 已实现（执行层最小回路）
 
-代码在 `src/shadowclaw/`，按三层分包：`execution/`（阶段 1）、`harness/`（阶段 2）、`evaluation/`（占位，阶段 4 落地）。仓库根的 `harness/` 是驾驭层内容正本，代码只经配置读取其路径，不写死。
+代码在 `src/shadowclaw/`，按三层分包：`execution/`（阶段 1）、`harness/`（阶段 2）、`evaluation/`（阶段 3 地基 + 阶段 4 回路）。仓库根的 `harness/` 是驾驭层内容正本，代码只经配置读取其路径，不写死。
 
 执行层模块（一个模块一个职责，接口为最小 Protocol，组装只在 CLI 入口）：
 
@@ -102,5 +102,26 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/shadowclaw shadow --mock    # 离线验流程（脚本答复固定未命中，只验 mechanics）
 .venv/bin/python -m pytest            # 48 项测试（阶段 1 的 25 + 阶段 2 的 15 + 阶段 3 的 8）
 ```
+
+## 阶段 4 已实现（评估层回路转满第一轮）
+
+形态：信号 → 提案 → 回归对照 → 整轮判定 → 分级合入 → 迭代报告，整条回路建成并用阶段 3 的真实信号（32 条）实跑转满一轮。judge 与硬查一致率 67%＜70%，本轮权重归零：运行器不调用、报告不引用其判定，只计数。
+
+| 件 | 内容 |
+|---|---|
+| `evaluation/proposals.py` | ChangeProposal 字段级实现（目标文件/diff/四级 class 含 infra/证据信号 id/归因/预期效果含副作用/状态机）+ 提案生成器（规则写死：按 harness 版本切分、先定位到层才提改动；judge 信号只计数不作证据）+ 落盘 `evaluation/proposals/`（提案 JSON + 索引 + 信号处置账，幂等） |
+| `evaluation/iterate.py` + CLI `iterate` | 回路运行器：基线跑 6 案 → 生成提案 → lesson 级应用到工作副本 → 候选跑 → 分项对比（命中/覆盖/原则错误）→ 任一退步整轮拒绝；通过才合入正本（合入前备份到轮次目录，可回滚）；structural/locked 只生成转 pending_li；答复全文按轮次存档 |
+| 判定仪表修复（infra） | 编造核查合法来源扩到全部组装材料（手册全文 + core 记忆），数值 SI 换算同族比对（相对误差 ≤5%）+ 建议性语境豁免；certainty 去脆：关键词未中且结论段语义核查（案例 `semantic_groups` 规则同义组）也未中才成立 |
+| `reports/iteration-report-001.md` | 迭代报告 001 |
+
+### 跑法（阶段 4 增量）
+
+```bash
+.venv/bin/shadowclaw iterate          # 真实转一轮（需 OpenRouter key；两轮回归预算上限 $1）
+.venv/bin/shadowclaw iterate --mock   # 离线验回路 mechanics（不合入正本）
+.venv/bin/python -m pytest            # 61 项测试（48 + 阶段 4 的 13）
+```
+
+**第一轮结果（如实）**：基线 6/6 命中、原则性错误 0（阶段 3 第二轮的三条仪表误报在本轮基线未再现——新仪表下 write 案 0 编造标记、ec2/github 0 certainty 标记）；生成提案 3 条（infra 修复 2 条已随代码落地 merged；lesson 手册补条 1 条）；候选跑出现两处退步（github 命中由真变假、telegram 覆盖 3/4→2/4），按预注册规则**整轮拒绝**，手册正本未改动，lesson 提案以 rejected + 负教训注记存档。每格均为单次采样，模型随机性是退步的可能成因之一——判定口径不因此放松，待后续轮次攒样本再看。
 
 **如实标注**：本轮真实回放被 OpenRouter key 的上限拦下，未产生效果结论——组装提示词 23,023 tokens 超过该 key 允许的提示上限 12,970 tokens（首次尝试另遇 402 预留额度，压小 max_tokens 预留后仍被提示上限拦下）。组装提示含原则 + 手册全文是设计口径，不为省额度缩减；需 li 调高 key 限额或充值后重跑 `shadowclaw shadow` 即可续。报告中 6 案例为 1 失败 + 5 未跑，原则性错误一项标「未能判定」，不作验收通过结论。信号账本本轮未写入（无跑完案例）。

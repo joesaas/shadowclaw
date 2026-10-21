@@ -8,6 +8,9 @@
                                       简报，真实模型独立排障并与参照解
                                       对照，产出 reports/shadow-report-v1.md
                                       （--mock 用脚本单元离线验流程）
+  shadowclaw iterate [--mock]         阶段 4 评估层回路：基线 → 提案 →
+                                      候选 → 整轮判定 → 合入/拒绝，产出
+                                      reports/iteration-report-001.md
   shadowclaw replay <run_id>          按轨迹复盘打印时间线
   shadowclaw resume <run_id>          从检查点续跑（单元注册表用 demo 集，
                                       阶段 1 范围；真实场景注册表随阶段 2）
@@ -157,6 +160,76 @@ async def _cmd_shadow(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_iterate(args: argparse.Namespace) -> int:
+    """阶段 4 评估层回路：基线 → 提案 → 候选 → 整轮判定 → 合入/拒绝，
+    产出 reports/iteration-report-001.md。judge 本轮权重归零不调用。
+    --mock 只验回路 mechanics（工作副本上演练，不合入正本）。"""
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from ..evaluation.iterate import render_iteration_report, run_iteration
+    from ..evaluation.regression import load_cases
+    from ..evaluation.shadow import (build_real_unit_factory,
+                                     ensure_openrouter_api_key)
+    from ..evaluation.signals import SignalStore
+    from ..harness.loader import load_harness
+
+    repo_root = Path(__file__).resolve().parents[3]
+    eval_dir = Path(args.eval_dir) if args.eval_dir else repo_root / "evaluation"
+    cases = load_cases(eval_dir / "regression" / "cases")
+    config = Config.from_env()
+    bundle = load_harness(config.harness_dir, "troubleshooting")
+    config = replace(config, harness_version=bundle.version)
+
+    if args.mock:
+        from .contracts import UnitResult
+        from .units import MockUnit
+
+        def factory(case, assembled):  # noqa: ANN001
+            return MockUnit(
+                "shadow-solver",
+                UnitResult(text="结论：未证实，材料不足，无法判断根因。",
+                           tokens_in=10, tokens_out=10),
+                model="mock",
+                instruction=assembled.render_instruction())
+        apply_merge = False
+        model_label = "mock"
+        config = replace(config, model="mock")
+    else:
+        if not ensure_openrouter_api_key():
+            print("拿不到 OpenRouter 凭证，迭代回路未运行。",
+                  file=sys.stderr)
+            return 2
+        factory = build_real_unit_factory(args.model)
+        apply_merge = True
+        model_label = args.model
+        config = replace(config, model=args.model)
+
+    result = await run_iteration(
+        cases=cases, harness_dir=config.harness_dir, eval_dir=eval_dir,
+        config=config, unit_factory=factory, round_id=args.round,
+        apply_merge=apply_merge, model_label=model_label)
+    store = SignalStore(eval_dir / "signals" / "signals.jsonl")
+    report = render_iteration_report(
+        result, signal_counts=store.count_by_kind(),
+        generated_at=datetime.now(timezone.utc).isoformat())
+    out = Path(args.out) if args.out else repo_root / "reports" / \
+        f"iteration-report-{args.round}.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report, encoding="utf-8")
+    print(f"迭代报告：{out}")
+    print(f"整轮判定：{result.verdict}")
+    for p in result.proposals:
+        print(f"[{p.id}] [{p.change_class}] {p.status} {p.title}")
+    if result.regressions:
+        print("退步项：" + "；".join(result.regressions))
+    if result.stopped_reason:
+        print(f"⚠️ {result.stopped_reason}")
+    print(f"花费：基线 ${result.baseline_cost:.4f} → 候选 "
+          f"${result.candidate_cost:.4f}")
+    return 0
+
+
 def _cmd_replay(args: argparse.Namespace) -> int:
     config = Config.from_env()
     store = SqliteTrajectoryStore(config.db_path)
@@ -205,6 +278,14 @@ def main(argv: list[str] | None = None) -> int:
                           help="OpenRouter 模型 slug（默认 google/gemini-3.8-flash）")
     p_shadow.add_argument("--eval-dir", help="评估层数据目录（默认仓库根 evaluation/）")
     p_shadow.add_argument("--out", help="影子报告输出路径")
+    p_iter = sub.add_parser("iterate", help="阶段 4 评估层回路（转满一轮）")
+    p_iter.add_argument("--mock", action="store_true",
+                        help="用 MockUnit 离线验回路（不合入正本）")
+    p_iter.add_argument("--model", default="google/gemini-3.8-flash",
+                        help="OpenRouter 模型 slug（默认 google/gemini-3.8-flash）")
+    p_iter.add_argument("--round", default="001", help="轮次号（默认 001）")
+    p_iter.add_argument("--eval-dir", help="评估层数据目录（默认仓库根 evaluation/）")
+    p_iter.add_argument("--out", help="迭代报告输出路径")
     p_replay = sub.add_parser("replay", help="按轨迹复盘一个 run")
     p_replay.add_argument("run_id")
     p_resume = sub.add_parser("resume", help="从检查点续跑一个 run")
@@ -216,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_demo2(args))
     if args.command == "shadow":
         return asyncio.run(_cmd_shadow(args))
+    if args.command == "iterate":
+        return asyncio.run(_cmd_iterate(args))
     if args.command == "resume":
         return asyncio.run(_cmd_resume(args))
     return _cmd_replay(args)
