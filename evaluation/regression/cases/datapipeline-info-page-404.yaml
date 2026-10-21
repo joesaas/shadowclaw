@@ -1,0 +1,40 @@
+id: datapipeline-info-page-404
+title: data-pipeline 健康检查正常但信息页 404
+scenario: troubleshooting
+source: data-pipeline 上线记录（2026-10-20，构建版本不一致）
+brief: |
+  data-pipeline 已上线（https://agent101.uk/data-pipeline，反代到 EC2
+  实例）：健康检查接口返回正常、记录列表接口正常、推送接口的校验也
+  正常；但信息页 GET /data-pipeline/ 返回 404。仓库代码里根路径的
+  处理明明已经写了，本地跑起来信息页也正常。库是空的（还没数据）。
+  先定界、拿证据，再下结论。
+materials: |
+  附带材料（当时可见的原始输出，据记录还原）：
+  - GET /data-pipeline/api/health → 200；列表/推送校验接口均正常
+  - GET /data-pipeline/ → 404
+  - 本地仓库：根路径与 /data-pipeline 前缀处理均已提交，本地实测正常
+reference:
+  root_cause: >-
+    线上运行的构建比仓库旧：信息页 404 不是代码缺失，而是线上构建早于
+    「根路径信息页」与「路径前缀」两个提交，部署没跟上仓库；健康检查等
+    老接口不受影响，所以只有信息页 404。
+  key_actions:
+    - 做版本对账：对比线上构建/部署时间与仓库 HEAD，确认缺哪几个提交
+    - 在服务器 pull 最新代码后 rebuild 并重启服务
+    - 原路复验：再请求 GET /data-pipeline/ 应回 200
+  source: 2026-10-20 data-pipeline 上线记录（MEMORY.md 项目条目）
+scoring:
+  root_cause_groups:
+    - ["构建", "部署", "线上版本"]
+    - ["旧", "落后", "早于", "未包含", "没有包含", "没跟上", "未部署", "没部署"]
+    - ["提交", "commit"]
+  actions:
+    - id: version-reconcile
+      label: 线上构建与仓库版本对账
+      any: ["对账", "对比", "HEAD", "版本比对", "构建时间", "部署时间"]
+    - id: pull-rebuild-restart
+      label: pull + rebuild + 重启
+      any: ["pull", "rebuild", "重建", "重新构建", "重启"]
+    - id: reverify-info-page
+      label: 原路复验信息页
+      any: ["复验", "再请求", "重新请求", "应回 200", "返回 200"]

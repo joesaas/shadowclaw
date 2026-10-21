@@ -1,0 +1,47 @@
+id: telegram-hook-log-array
+title: Telegram 自动回复失效，消息被取走却无回复
+scenario: troubleshooting
+source: 排障手册常见坑 3（Telegram hook log() 参数类型，2026-10-07）
+brief: |
+  Telegram 自动回复突然失效：用户给 bot 发了私聊消息，轮询 hook 的
+  getUpdates 水位（last_update_id）在推进，说明消息确实被 hook 取走
+  了；但没有任何回复发出，事后在任何地方都找不到那条消息的内容。
+  hook 脚本的日志里在出事时间点有一条报错，之后脚本就退出了。
+  先定界、拿证据，再下结论。
+materials: |
+  附带材料（当时可见的原始输出，据记录还原）：
+  - hook 状态文件：last_update_id 已推进到出事消息之后
+  - hook 日志：出事时间点一条报错堆栈，位置在记录日志的那一步、
+    唤醒 worker 之前；脚本带 set -e
+  - 收件箱语义：该 inbox 是破坏性读取，消息被取走即消费、不可回取
+reference:
+  root_cause: >-
+    hook 脚本调用运行时 log() 时把 fields 参数传成了 JSON 数组，而运行时
+    要求 fields 必须是对象；脚本在 set -e 下死在「消费了消息之后、唤醒
+    worker 之前」这一步。表象是消息丢了，根因是一个参数类型错误；又因为
+    收件箱是破坏性读取，消息消费即不可回取。
+  key_actions:
+    - 链路型系统按段定位（轮询/消费/日志/唤醒/回复），不盯着表象层
+    - 查 hook 脚本与日志原文，核对出错那一步的参数类型
+    - 把 log() 的 fields 改为对象包裹（如 {count, messages}）再上线
+    - 端到端复验：真发一条消息，确认回复到达并写入存档
+  source: 2026-10-07 Telegram 自动回复修复记录（MEMORY.md / 排障手册常见坑 3）
+scoring:
+  root_cause_groups:
+    - ["log()"]
+    - ["数组"]
+    - ["对象"]
+    - ["唤醒", "wake", "worker", "消费之后", "取走之后"]
+  actions:
+    - id: segment-the-chain
+      label: 按链路段定位故障段
+      any: ["按段", "分段", "逐段", "链路", "哪一段", "分环节"]
+    - id: inspect-script-and-log
+      label: 查脚本与日志原文/参数类型
+      any: ["脚本", "参数类型", "日志原文", "报错栈"]
+    - id: wrap-fields-as-object
+      label: 把 fields 改为对象包裹
+      any: ["对象包裹", "包成对象", "改为对象", "改成对象", "包一层对象"]
+    - id: e2e-reverify
+      label: 端到端复验（真发消息看回复）
+      any: ["端到端", "真发", "实测回复", "发一条"]

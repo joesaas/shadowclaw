@@ -82,3 +82,25 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 **如实标注的出入**：GitHub 真实联调缺 token——本机无 `GITHUB_TOKEN`，MCP 工厂只验证了「无 token 诚实降级」与「有 token 能构造 toolset（惰性连接，未发起会话）」，端点连通性与真实工具清单未验；工具名与风险分级按官方 GitHub MCP 的常见命名与工具卡口径维护，联调时以服务端实际清单为准校对。Jira 按 li 决定暂缓（见 roadmap 阶段 2 补注）。
+
+## 阶段 3 已实现（影子模式试运行 · 历史回放版）
+
+形态：回放双跑——每个案例只给 ShadowClaw「当时的症状简报」（不给答案），它经排障场景组装（原则 + 手册 + 记忆）后用真实模型独立排障，产出与参照解（li 当时的实际根因与关键动作）对照，偏差定位到层。真·同步双跑（真实任务进行时同跑）不在本轮，待真实任务。
+
+| 件 | 内容 |
+|---|---|
+| `evaluation/signals.py` | 信号存储：JSONL 追加写，字段按评估层设计 Step 2；correction/outcome 缺出处引用拒存 |
+| `evaluation/regression.py` | 回归集加载 + 程序硬查（结论命中=根因关键词组全中、动作覆盖、编造/未核实断言两类原则性错误硬查） |
+| `evaluation/shadow.py` | 影子运行器：场景组装 → 真实模型求解（LiteLlm 走 OpenRouter）→ 硬查 → judge 自评（仅参考）→ 偏差归因 → 信号入账；每案例调用 ≤8，遇额度错误立即停 |
+| `evaluation/regression/cases/` | 回归集 v1：6 个真实历史案例（DocReader .env 未进进程、EC2 Node 版本过旧、GitHub App 403 能力边界、Telegram hook log() 传数组、write 假成功、data-pipeline 信息页 404），简报只写症状、参照解带出处 |
+| `reports/shadow-report-v1.md` | 影子报告 v1 |
+
+### 跑法（阶段 3 增量）
+
+```bash
+.venv/bin/shadowclaw shadow           # 真实回放（需 OpenRouter key：环境变量或保险库替身）
+.venv/bin/shadowclaw shadow --mock    # 离线验流程（脚本答复固定未命中，只验 mechanics）
+.venv/bin/python -m pytest            # 48 项测试（阶段 1 的 25 + 阶段 2 的 15 + 阶段 3 的 8）
+```
+
+**如实标注**：本轮真实回放被 OpenRouter key 的上限拦下，未产生效果结论——组装提示词 23,023 tokens 超过该 key 允许的提示上限 12,970 tokens（首次尝试另遇 402 预留额度，压小 max_tokens 预留后仍被提示上限拦下）。组装提示含原则 + 手册全文是设计口径，不为省额度缩减；需 li 调高 key 限额或充值后重跑 `shadowclaw shadow` 即可续。报告中 6 案例为 1 失败 + 5 未跑，原则性错误一项标「未能判定」，不作验收通过结论。信号账本本轮未写入（无跑完案例）。

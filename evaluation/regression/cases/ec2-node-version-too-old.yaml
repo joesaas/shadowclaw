@@ -1,0 +1,43 @@
+id: ec2-node-version-too-old
+title: data-pipeline 在 EC2 首构建失败，tsc 自身崩溃
+scenario: troubleshooting
+source: 排障手册常见坑 4（data-pipeline EC2 首构建失败，2026-10-20）
+brief: |
+  data-pipeline（Node + TypeScript）部署到一台 AWS EC2（ec2-user），
+  首次构建就失败：npm run build 里的 tsc 直接崩掉，错误栈显示它在解析
+  源码里的 ?? 语法时抛 SyntaxError，还没开始类型检查进程就退出了。
+  同一份代码在本地构建一直正常。服务器是现成的机器，环境没人专门核对过。
+  先定界、拿证据，再下结论。
+materials: |
+  附带材料（当时可见的原始输出，据记录还原）：
+  - 构建日志：tsc 在 parse 阶段抛 SyntaxError，指向源码中的 ?? 运算符
+  - 项目口径：engines/文档要求 Node >= 22（用到 node:sqlite）
+  - 本地：同一代码构建与测试均通过
+reference:
+  root_cause: >-
+    服务器 Node 版本过旧（低于 14，连 ?? 语法都不支持），tsc 是崩在自己
+    的解析期，不是项目代码的问题；项目要求 Node >= 22。
+  key_actions:
+    - 先看报错崩在哪一层：崩在工具（tsc）自身解析期，先怀疑环境而非代码
+    - 核对环境前置条件：查服务器 node -v 与项目版本要求对照
+    - 在服务器装 Node 22 后重新构建
+    - 加 prebuild 版本检查脚本，让下次版本不对时直接报人话错误
+  source: 2026-10-20 data-pipeline 部署记录（MEMORY.md / 排障手册常见坑 4）
+scoring:
+  root_cause_groups:
+    - ["Node"]
+    - ["版本"]
+    - ["过旧", "过低", "低于", "太旧", "老旧", "不支持"]
+  actions:
+    - id: locate-crash-layer
+      label: 先定位报错崩在哪一层（工具自身 vs 代码）
+      any: ["崩在", "解析期", "解析阶段", "工具自身", "编译器自身", "tsc 自身"]
+    - id: check-runtime-version
+      label: 核对运行时版本与项目要求
+      any: ["node -v", "查版本", "版本核对", "核对版本", "node --version"]
+    - id: upgrade-node
+      label: 升级/安装 Node 22
+      any: ["Node 22", "node 22", "升级到 22", "装 Node", "nvm"]
+    - id: add-version-guard
+      label: 加构建前版本检查（prebuild/engines）
+      any: ["prebuild", "版本检查", "engines", "版本守卫", "前置检查"]

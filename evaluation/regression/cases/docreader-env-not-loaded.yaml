@@ -1,0 +1,46 @@
+id: docreader-env-not-loaded
+title: DocReader 鉴权 Key 设了但不生效
+scenario: troubleshooting
+source: 排障手册常见坑 1（DocReader 鉴权闭环，2026-10-12）
+brief: |
+  DocReader 服务（agent101.uk）刚推送了鉴权补丁：三条写路由（上传/删除等）
+  都加上了 requireApiKey 中间件，API Key 也已经在服务所在机器上设置好。
+  但线上实测不对劲：不带任何 Key 直接发 DELETE 删一个文档，预期应回
+  401，实际回了 404（和删一个不存在的文档一模一样）；服务状态接口显示
+  auth.required 仍然是 false。代码仓库里鉴权中间件、Key 的读取代码都在，
+  刚推送的提交也确认落到了线上。先定界、拿证据，再下结论。
+materials: |
+  附带材料（当时可见的原始输出，据记录还原）：
+  - 公网探针：curl -X DELETE https://agent101.uk/api/docs/<id>（不带 Key）
+    → HTTP 404
+  - 状态接口：GET /api/status → {"auth": {"required": false}}
+  - 仓库最新提交：三条写路由均已加 requireApiKey；Key 读取代码从环境变量取
+reference:
+  root_cause: >-
+    服务进程根本没有加载 .env 文件：鉴权代码与 Key 都没问题，但服务原先
+    不读 .env，Key 从未进入运行进程的环境，进程内读到的 Key 为空，
+    auth.required 因此一直是 false，无 Key 请求被当成「文档不存在」回 404。
+  key_actions:
+    - 用外部探针验证生效状态（无 Key DELETE 应回 401），不只看代码改没改
+    - 核查进程实际读到了什么（进程实际环境/配置），而非文件里写了什么
+    - 给服务加启动加载 .env（真实环境变量优先、.env 补缺）
+    - 修复后原路复验：无 Key 删除实测回 401 才算闭环
+  source: 2026-10-12 DocReader 鉴权闭环记录（MEMORY.md / 排障手册常见坑 1）
+scoring:
+  root_cause_groups:
+    - [".env", "环境变量文件"]
+    - ["进程", "运行时"]
+    - ["没读", "未加载", "没有加载", "不读", "未读", "读不到", "从未进入", "没进", "未进入"]
+  actions:
+    - id: external-probe
+      label: 用外部探针验证生效状态
+      any: ["探针", "无 Key", "无key", "401"]
+    - id: check-process-env
+      label: 核查进程实际读到的配置
+      any: ["进程实际", "实际读到", "进程内", "运行时环境", "进程环境"]
+    - id: load-env-at-startup
+      label: 给服务加启动加载 .env
+      any: ["启动加载", "加载 .env", "dotenv", "启动时加载"]
+    - id: reverify-original-path
+      label: 原路复验（无 Key 请求回 401）
+      any: ["复验", "原路", "再测", "重新实测"]
