@@ -106,14 +106,17 @@ scoring:
 """
 
 
-def test_certainty_debrittled_by_semantic_hit(tmp_path):
+def test_semantic_fallback_counts_as_hit(tmp_path):
+    """测法升级（li 拍板 (a)）：同义组全中即命中，不再只作 certainty
+    去脆门——取代阶段 4 初版「semantic 只去脆不算命中」的旧断言。"""
     p = tmp_path / "semantic.yaml"
     p.write_text(SEMANTIC_YAML, encoding="utf-8")
     case = load_case(p)
-    # 关键词组未中（无「没读到/未加载/配置」），但结论段语义命中
+    # 关键词组未中（无「没读到/未加载/配置」），但同义组全中
     answer = "结论：已证实，根因是服务进程启动时变量未生效，读不到。"
     result = check_answer(case, answer)
-    assert result.conclusion_hit is False
+    assert result.conclusion_hit is True
+    assert result.hit_via.startswith("semantic")
     assert result.semantic_hit is True
     assert "certainty_without_evidence" not in {
         e.kind for e in result.principle_errors}

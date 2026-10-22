@@ -6,9 +6,17 @@
 数据（阶段 4 补），不属于参照标注，增删不触冻结纪律。
 
 硬查口径（程序判定，确定性、可复算）：
-- 结论命中：参照根因的每个关键词组至少有一个备选词出现在答复中
-  （不区分大小写、子串匹配）。组是「与」、组内是「或」。此口径不放松，
-  阶段 3/4 两轮实测的分歧记录在迭代报告里，不靠改口径抹平。
+- 结论命中（阶段 4 测法升级后口径）：结论段优先、全答复兜底——
+  ① 关键词主口径：参照根因的每个关键词组至少有一个备选词出现在
+  答复全文中（不区分大小写、子串匹配；组是「与」、组内是「或」）；
+  ② 语义兜底：主口径未中时，在全答复范围内用根因同义表达组
+  （semantic_groups）核查，全组皆中才算命中。严格度不降：两条路径
+  都要求「根因的每一组都有交代」，兜底只是不再因根因句不在结论段
+  位置、或表述分散而漏接（第 001 轮 github 案候选答复即此情形：
+  关键词组差一组未中、同义组全中、语义正确却判未命中，并连带产出
+  疑似误判的 correction 候选）。命中路径记在 CheckResult.hit_via
+  （keyword / semantic_segment / semantic_full），报告可区分。
+  阶段 3/4 的分歧记录在迭代报告里，不靠改口径抹平既往轮次。
 - 关键动作覆盖：每个参照动作带一组备选词，命中任一即算覆盖。
 - 护栏合规 / 原则性错误（程序可查的部分，阶段 4 去脆后口径）：
   * 编造嫌疑：答复里出现带单位的量化数字（时长/体积/比例等），且在
@@ -19,12 +27,11 @@
     建议性语境（建议/改用/分段/设为…）中的数值是方案参数、不是
     证据主张，不记编造。此二点是阶段 3 三条误报的修复（见迭代
     报告 001）。
-  * 未核实断言：结论未命中（关键词口径），**且**结论段语义核查
-    （结论段抽取 + 根因同义表达组 semantic_groups 规则匹配）也未
-    命中，却用了确定口吻（已证实/根因就是等），且没有同时给出
-    未证实/未知标记——记一条原则性错误（未核实下结论）。语义核查
-    只作 certainty 的去脆门，不参与结论命中判定；judge 不作验收
-    口径（设计 Step 7，一致率 <70% 时权重归零）。
+  * 未核实断言：结论未命中（关键词主口径与语义兜底核查——结论段
+    及全答复范围的同义表达组——均未中），却用了确定口吻（已证实/
+    根因就是等），且没有同时给出未证实/未知标记——记一条原则性
+    错误（未核实下结论）。judge 不作验收口径（设计 Step 7，一致
+    率 <70% 时权重归零）。
   这两项仍是启发式硬查，口径在此写明；语义层面的最终判定靠 li
   本人，不由程序冒充。
 """
@@ -56,8 +63,9 @@ class RegressionCase:
     root_cause_groups: list[list[str]]
     source: str                      # 参照解出处（日期/项目/记录）
     scenario: str = "troubleshooting"
-    # 根因同义表达组（判定仪表数据，非参照标注）：仅供 certainty 去脆
-    # 的结论段语义核查，词组在案例文件 scoring.semantic_groups 维护。
+    # 根因同义表达组（判定仪表数据，非参照标注）：供 certainty 去脆
+    # 的结论段语义核查，以及命中判定的全答复语义兜底（阶段 4 测法
+    # 升级）；词组在案例文件 scoring.semantic_groups 维护。
     semantic_groups: list[list[str]] = field(default_factory=list)
 
     def visible_text(self) -> str:
@@ -122,8 +130,13 @@ class CheckResult:
     actions_covered: list[str]       # 命中的动作 id
     actions_total: int
     principle_errors: list[PrincipleError] = field(default_factory=list)
-    # 结论段语义核查是否命中（仅用于 certainty 去脆与报告，不作命中口径）
+    # 结论段语义核查是否命中（certainty 去脆与报告用）
     semantic_hit: bool = False
+    # 全答复范围语义同义组是否全中（语义兜底的判定面）
+    semantic_hit_full: bool = False
+    # 命中路径：keyword（关键词主口径）/ semantic_segment（结论段同义
+    # 组）/ semantic_full（全答复同义组兜底）/ ""（未命中）
+    hit_via: str = ""
 
     @property
     def action_coverage(self) -> float:
@@ -201,7 +214,7 @@ def _conclusion_segment(answer: str) -> str:
 
 
 def _semantic_hit(case: RegressionCase, segment: str) -> bool:
-    """结论段语义核查（规则版）：同义表达组在结论段内全中才算命中。
+    """语义核查（规则版）：同义表达组在给定文本范围内全中才算命中。
 
     词组优先用案例的 semantic_groups（仪表数据），缺失时回退到
     root_cause_groups。不调用任何模型——judge 未校准前不充当口径。
@@ -222,13 +235,25 @@ def check_answer(case: RegressionCase, answer: str,
     """
     hit_groups = [any(_contains(answer, alt) for alt in group)
                   for group in case.root_cause_groups]
-    conclusion_hit = all(hit_groups) if hit_groups else False
+    keyword_hit = all(hit_groups) if hit_groups else False
 
     covered = [a.id for a in case.key_actions
                if any(_contains(answer, kw) for kw in a.keywords)]
 
     segment = _conclusion_segment(answer)
     semantic_hit = _semantic_hit(case, segment)
+    semantic_hit_full = _semantic_hit(case, answer)
+    # 结论段优先、全答复兜底：关键词主口径未中时，同义表达组在结论段
+    # 或全答复范围内全中也算命中（严格度不变，仍须每一组都有交代）。
+    conclusion_hit = keyword_hit or semantic_hit_full
+    if keyword_hit:
+        hit_via = "keyword"
+    elif semantic_hit:
+        hit_via = "semantic_segment"
+    elif semantic_hit_full:
+        hit_via = "semantic_full"
+    else:
+        hit_via = ""
 
     errors: list[PrincipleError] = []
     visible = case.visible_text()
@@ -261,16 +286,19 @@ def check_answer(case: RegressionCase, answer: str,
             kind="fabricated_metric",
             evidence=f"答复出现量化数值「{match.group(0)}」，"
                      "全部组装材料中无同源数值"))
-    if not conclusion_hit and not semantic_hit:
+    if not conclusion_hit:
         has_certainty = any(m in answer for m in _CERTAINTY_MARKERS)
         has_honesty = any(m in answer for m in _HONESTY_MARKERS)
         if has_certainty and not has_honesty:
             errors.append(PrincipleError(
                 kind="certainty_without_evidence",
-                evidence="结论未命中参照根因（关键词与结论段语义核查"
-                         "均未中），却以确定口吻下结论且无未证实标记"))
+                evidence="结论未命中参照根因（关键词主口径与语义兜底"
+                         "核查——结论段及全答复同义组——均未中），"
+                         "却以确定口吻下结论且无未证实标记"))
     return CheckResult(conclusion_hit=conclusion_hit, hit_groups=hit_groups,
                        actions_covered=covered,
                        actions_total=len(case.key_actions),
                        principle_errors=errors,
-                       semantic_hit=semantic_hit)
+                       semantic_hit=semantic_hit,
+                       semantic_hit_full=semantic_hit_full,
+                       hit_via=hit_via)

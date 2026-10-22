@@ -11,6 +11,10 @@
   shadowclaw iterate [--mock]         阶段 4 评估层回路：基线 → 提案 →
                                       候选 → 整轮判定 → 合入/拒绝，产出
                                       reports/iteration-report-001.md
+                                      （--samples N 每侧每案采样 N 轮聚合）
+  shadowclaw rejudge <round_dir>      离线重判：当前仪表对某轮存档答复
+                                      对称重判（不调模型），产出轮次
+                                      目录下 rejudge-<round>.md
   shadowclaw replay <run_id>          按轨迹复盘打印时间线
   shadowclaw resume <run_id>          从检查点续跑（单元注册表用 demo 集，
                                       阶段 1 范围；真实场景注册表随阶段 2）
@@ -208,7 +212,8 @@ async def _cmd_iterate(args: argparse.Namespace) -> int:
     result = await run_iteration(
         cases=cases, harness_dir=config.harness_dir, eval_dir=eval_dir,
         config=config, unit_factory=factory, round_id=args.round,
-        apply_merge=apply_merge, model_label=model_label)
+        apply_merge=apply_merge, model_label=model_label,
+        samples=args.samples)
     store = SignalStore(eval_dir / "signals" / "signals.jsonl")
     report = render_iteration_report(
         result, signal_counts=store.count_by_kind(),
@@ -227,6 +232,45 @@ async def _cmd_iterate(args: argparse.Namespace) -> int:
         print(f"⚠️ {result.stopped_reason}")
     print(f"花费：基线 ${result.baseline_cost:.4f} → 候选 "
           f"${result.candidate_cost:.4f}")
+    return 0
+
+
+def _cmd_rejudge(args: argparse.Namespace) -> int:
+    """离线重判：用当前判定仪表对某轮存档答复对称重判（不调模型）。
+
+    产出 <round_dir>/rejudge-<round>.md；只出结论，不推翻原判定、
+    不合入改动（阶段 4 测法升级，li 拍板 (a)+(c)）。
+    """
+    from datetime import datetime, timezone
+
+    from ..evaluation.rejudge import (render_rejudge_report,
+                                      rejudge_round)
+
+    round_dir = Path(args.round_dir).resolve()
+    repo_root = Path(__file__).resolve().parents[3]
+    eval_dir = round_dir.parents[1] \
+        if round_dir.parent.name == "iterations" else repo_root / "evaluation"
+    cases_dir = Path(args.cases_dir) if args.cases_dir \
+        else eval_dir / "regression" / "cases"
+    harness_dir = Path(args.harness_dir) if args.harness_dir \
+        else Config.from_env().harness_dir
+    try:
+        result = rejudge_round(round_dir, cases_dir=cases_dir,
+                               harness_dir=harness_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"重判未执行：{exc}", file=sys.stderr)
+        return 1
+    out = round_dir / f"rejudge-{result.round_id}.md"
+    out.write_text(render_rejudge_report(
+        result, generated_at=datetime.now(timezone.utc).isoformat()),
+        encoding="utf-8")
+    print(f"重判报告：{out}")
+    print(f"原判定 {result.original_verdict}：退步项 "
+          f"{len(result.original_regressions)} 条 → 重判后 "
+          f"{len(result.rejudged_regressions)} 条")
+    for item in result.item_conclusions:
+        print(f"- {item}")
+    print(f"结论：{result.verdict_conclusion}")
     return 0
 
 
@@ -284,8 +328,14 @@ def main(argv: list[str] | None = None) -> int:
     p_iter.add_argument("--model", default="google/gemini-3.8-flash",
                         help="OpenRouter 模型 slug（默认 google/gemini-3.8-flash）")
     p_iter.add_argument("--round", default="001", help="轮次号（默认 001）")
+    p_iter.add_argument("--samples", type=int, default=1,
+                        help="每侧每案采样轮数（默认 1；后续轮次用 2）")
     p_iter.add_argument("--eval-dir", help="评估层数据目录（默认仓库根 evaluation/）")
     p_iter.add_argument("--out", help="迭代报告输出路径")
+    p_rejudge = sub.add_parser("rejudge", help="离线重判某轮存档答复（不调模型）")
+    p_rejudge.add_argument("round_dir", help="轮次目录，如 evaluation/iterations/001")
+    p_rejudge.add_argument("--cases-dir", help="回归集案例目录（默认按轮次目录推导）")
+    p_rejudge.add_argument("--harness-dir", help="基线侧 harness 正本目录（默认读配置）")
     p_replay = sub.add_parser("replay", help="按轨迹复盘一个 run")
     p_replay.add_argument("run_id")
     p_resume = sub.add_parser("resume", help="从检查点续跑一个 run")
@@ -299,6 +349,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_shadow(args))
     if args.command == "iterate":
         return asyncio.run(_cmd_iterate(args))
+    if args.command == "rejudge":
+        return _cmd_rejudge(args)
     if args.command == "resume":
         return asyncio.run(_cmd_resume(args))
     return _cmd_replay(args)

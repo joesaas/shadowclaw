@@ -15,13 +15,21 @@ lesson 级提案应用到工作副本 → 候选版再跑 → 分项对比 → �
 judge 纪律（设计 Step 7）：judge 与硬查一致率 67% < 70%，本轮权重
 归零——迭代运行 judge_fn=None 不调用、不判定，报告中明示。
 
+多轮采样（阶段 4 测法升级）：基线/候选两侧都支持 samples 参数
+（默认 1，与单轮行为兼容）。同案多份答复分别判定后聚合：命中取
+严格多数（票数 ×2 > 完成样本数）、覆盖取中位数（.5 向下取整，
+从严）、原则性错误任一轮出现即记（计数取各轮最大值）、花费求和。
+单轮单采样分不清「提案伤害」与「采样波动」，后续轮次用 samples=2。
+
 答复存档：每轮把基线/候选的逐案答复全文存进轮次目录（阶段 3 的
-教训：轨迹只存 200 字预览，答复不落盘就无法离线重判）。
+教训：轨迹只存 200 字预览，答复不落盘就无法离线重判）。samples>1
+时同一案例存为答复列表，供 rejudge 按同一聚合口径离线重判。
 """
 from __future__ import annotations
 
 import json
 import shutil
+import statistics
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -66,6 +74,7 @@ class IterationResult:
     candidate_cost: float = 0.0
     stopped_reason: str = ""
     model_label: str = ""
+    samples: int = 1                     # 每侧每案采样轮数（聚合口径见模块 docstring）
 
 
 def score_run(run: ShadowRun) -> list[CaseScore]:
@@ -80,6 +89,46 @@ def score_run(run: ShadowRun) -> list[CaseScore]:
             score.principle_errors = len(cr.check.principle_errors)
         out.append(score)
     return out
+
+
+def aggregate_case_scores(samples: list[CaseScore]) -> CaseScore:
+    """同案多轮采样的分项聚合（口径见模块 docstring，写死在此）：
+
+    命中取严格多数、覆盖取中位数向下取整、原则错误任一轮出现即记
+    （计数取最大值）、花费求和；任一样本未跑完则聚合状态不算
+    completed（分项仍按已完成样本聚合，供报告与重判对照）。
+    """
+    first = samples[0]
+    completed = [s for s in samples if s.status == "completed"]
+    agg = CaseScore(
+        case_id=first.case_id,
+        status="completed" if len(completed) == len(samples)
+        else next((s.status for s in samples
+                   if s.status != "completed"), "error"),
+        total=first.total,
+        cost=sum(s.cost for s in samples),
+        run_id=",".join(s.run_id for s in samples if s.run_id))
+    if completed:
+        votes = sum(1 for s in completed if s.hit)
+        agg.hit = votes * 2 > len(completed)
+        agg.covered = int(statistics.median(
+            [s.covered for s in completed]) // 1)
+        agg.principle_errors = max(s.principle_errors
+                                   for s in completed)
+    return agg
+
+
+def aggregate_runs(runs: list[ShadowRun]) -> list[CaseScore]:
+    """多轮 ShadowRun → 逐案聚合分项（顺序按首轮案例顺序）。"""
+    per_case: dict[str, list[CaseScore]] = {}
+    order: list[str] = []
+    for run in runs:
+        for score in score_run(run):
+            if score.case_id not in per_case:
+                per_case[score.case_id] = []
+                order.append(score.case_id)
+            per_case[score.case_id].append(score)
+    return [aggregate_case_scores(per_case[cid]) for cid in order]
 
 
 def compare_case_scores(baseline: list[CaseScore],
@@ -108,24 +157,42 @@ def compare_case_scores(baseline: list[CaseScore],
     return regressions
 
 
-def _save_answers(path: Path, run: ShadowRun) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(
-        {cr.case_id: cr.answer for cr in run.cases},
-        ensure_ascii=False, indent=1), encoding="utf-8")
-
-
 async def _run_pass(*, cases: list[RegressionCase], harness_root: Path,
                     config: Config, round_dir: Path, tag: str,
-                    unit_factory: UnitFactory) -> ShadowRun:
+                    unit_factory: UnitFactory,
+                    samples: int = 1) -> list[ShadowRun]:
+    """跑一侧（基线或候选）samples 轮，逐轮存信号与答复存档。
+
+    samples=1 时存档形状与单轮时代一致（answers-{tag}.json 为
+    {case_id: 答复}、信号文件 signals-{tag}.jsonl）；samples>1 时
+    答复存为 {case_id: [答复, ...]}、信号分文件 signals-{tag}-{i}.jsonl。
+    任一轮中途停止（额度纪律）即不再继续采样，stopped_reason 由
+    调用方从返回的 runs 里取。
+    """
     bundle = load_harness(harness_root, "troubleshooting")
     run_config = replace(config, db_path=round_dir / "trajectory.db")
-    store = SignalStore(round_dir / f"signals-{tag}.jsonl")
-    run = await run_shadow(cases=cases, bundle=bundle, config=run_config,
-                           signal_store=store, unit_factory=unit_factory,
-                           judge_fn=None)   # judge 权重归零：不调用
-    _save_answers(round_dir / f"answers-{tag}.json", run)
-    return run
+    runs: list[ShadowRun] = []
+    answers: dict[str, list[str]] = {}
+    for i in range(samples):
+        store = SignalStore(round_dir / (
+            f"signals-{tag}.jsonl" if samples == 1
+            else f"signals-{tag}-{i + 1}.jsonl"))
+        run = await run_shadow(cases=cases, bundle=bundle,
+                               config=run_config, signal_store=store,
+                               unit_factory=unit_factory,
+                               judge_fn=None)   # judge 权重归零：不调用
+        runs.append(run)
+        for cr in run.cases:
+            answers.setdefault(cr.case_id, []).append(cr.answer)
+        if run.stopped_reason:
+            break
+    payload: dict[str, Any] = (
+        {cid: texts[0] for cid, texts in answers.items()}
+        if samples == 1 else answers)
+    (round_dir / f"answers-{tag}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    return runs
 
 
 def _apply_lesson_proposals(work_root: Path,
@@ -165,6 +232,7 @@ def persist_round(result: IterationResult, round_dir: Path) -> None:
         "round_id": result.round_id,
         "harness_version": result.harness_version,
         "model": result.model_label,
+        "samples": result.samples,
         "verdict": result.verdict,
         "baseline": [asdict(s) for s in result.baseline],
         "candidate": [asdict(s) for s in result.candidate or []],
@@ -181,27 +249,35 @@ async def run_iteration(*, cases: list[RegressionCase],
                         config: Config, unit_factory: UnitFactory,
                         round_id: str = "001",
                         apply_merge: bool = True,
-                        model_label: str = "") -> IterationResult:
-    """转满一轮：基线 → 提案 → 候选 → 判定 → 合入/拒绝。"""
+                        model_label: str = "",
+                        samples: int = 1) -> IterationResult:
+    """转满一轮：基线 → 提案 → 候选 → 判定 → 合入/拒绝。
+
+    samples：每侧每案采样轮数（默认 1；后续轮次用 2 压采样波动，
+    聚合口径见模块 docstring 与 aggregate_case_scores）。
+    """
     harness_dir = Path(harness_dir)
     eval_dir = Path(eval_dir)
     round_dir = eval_dir / "iterations" / round_id
     round_dir.mkdir(parents=True, exist_ok=True)
     result = IterationResult(round_id=round_id,
                              harness_version=config.harness_version,
-                             model_label=model_label)
+                             model_label=model_label, samples=samples)
 
     # ---- 基线（当前 harness，judge 不调用）
-    baseline_run = await _run_pass(
+    baseline_runs = await _run_pass(
         cases=cases, harness_root=harness_dir, config=config,
-        round_dir=round_dir, tag="baseline", unit_factory=unit_factory)
-    result.baseline = score_run(baseline_run)
+        round_dir=round_dir, tag="baseline", unit_factory=unit_factory,
+        samples=samples)
+    result.baseline = aggregate_runs(baseline_runs)
     result.baseline_cost = sum(c.cost for c in result.baseline)
-    if baseline_run.stopped_reason:
-        result.stopped_reason = baseline_run.stopped_reason
+    baseline_stopped = next((r.stopped_reason for r in baseline_runs
+                             if r.stopped_reason), "")
+    if baseline_stopped:
+        result.stopped_reason = baseline_stopped
         result.verdict = "rejected"
         result.regressions.append(
-            f"基线运行中途停止：{baseline_run.stopped_reason}")
+            f"基线运行中途停止：{baseline_stopped}")
         persist_round(result, round_dir)
         return result
 
@@ -210,7 +286,7 @@ async def run_iteration(*, cases: list[RegressionCase],
     proposal_store = ProposalStore(eval_dir / "proposals")
     generation = generate_proposals(
         main_store, proposal_store,
-        harness_version=baseline_run.harness_version)
+        harness_version=baseline_runs[0].harness_version)
     result.generation = {
         "created": [p.id for p in generation.created],
         "ignored_judge_signals": generation.ignored_judge_signals,
@@ -248,13 +324,16 @@ async def run_iteration(*, cases: list[RegressionCase],
         proposal_store.save(proposal)
 
     # ---- 候选版再跑
-    candidate_run = await _run_pass(
+    candidate_runs = await _run_pass(
         cases=cases, harness_root=work_root, config=config,
-        round_dir=round_dir, tag="candidate", unit_factory=unit_factory)
-    result.candidate = score_run(candidate_run)
+        round_dir=round_dir, tag="candidate", unit_factory=unit_factory,
+        samples=samples)
+    result.candidate = aggregate_runs(candidate_runs)
     result.candidate_cost = sum(c.cost for c in result.candidate)
-    if candidate_run.stopped_reason:
-        result.stopped_reason = candidate_run.stopped_reason
+    candidate_stopped = next((r.stopped_reason for r in candidate_runs
+                              if r.stopped_reason), "")
+    if candidate_stopped:
+        result.stopped_reason = candidate_stopped
 
     # ---- 整轮判定
     result.regressions = compare_case_scores(result.baseline,
@@ -313,6 +392,10 @@ def render_iteration_report(result: IterationResult, *,
                  "版本号哈希——已知缺口，迭代前后靠轮次目录区分）")
     lines.append(f"- 模型：{result.model_label or 'mock'}；整轮判定："
                  f"**{result.verdict}**")
+    if result.samples > 1:
+        lines.append(f"- 采样：每侧每案 {result.samples} 轮，聚合口径——"
+                     "命中取严格多数、覆盖取中位数（向下取整）、"
+                     "原则性错误任一轮出现即记（阶段 4 测法升级）")
     lines.append("")
     lines.append("## 信号账")
     lines.append("")
@@ -337,10 +420,9 @@ def render_iteration_report(result: IterationResult, *,
     lines.append("- certainty 去脆：关键词未中且结论段语义核查"
                  "（semantic_groups 规则同义组）也未中才成立；命中口径"
                  "本身不放松")
-    lines.append("- 离线重判：阶段 3 第二轮答复全文未落盘（轨迹只存 "
-                 "200 字预览），无法离线重判——三条误报是否消除以下方"
-                 "基线实跑的新仪表结果为准；本轮起答复全文按轮次存档，"
-                 "后续轮次可离线重判")
+    lines.append("- 离线重判：答复全文按轮次存档，可用 rejudge 子命令"
+                 "以当前仪表对存档答复对称重判（不调模型）；阶段 3 "
+                 "答复未落盘，三条误报以基线实跑的新仪表结果为准")
     lines.append("")
     lines.append("## 提案清单")
     lines.append("")

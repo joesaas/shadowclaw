@@ -393,8 +393,9 @@ def render_report(run: ShadowRun, *, generated_at: str) -> str:
     lines.append(f"- 模型：{run.model_label}（经 OpenRouter）")
     lines.append("- 形态：历史回放双跑——只给症状简报，ShadowClaw 独立"
                  "排障后与参照解对照；非真实任务同步双跑。")
-    lines.append("- 判定口径：程序硬查为验收口径（结论命中=根因关键词组"
-                 "全中；动作覆盖=参照动作关键词命中数）；judge 为模型"
+    lines.append("- 判定口径：程序硬查为验收口径（结论命中=根因关键词"
+                 "组全中，或同义表达组在全答复范围全中——语义兜底；"
+                 "动作覆盖=参照动作关键词命中数）；judge 为模型"
                  "自评，仅参考，与硬查不一致时以硬查为准。")
     if run.stopped_reason:
         lines.append(f"- ⚠️ 中途停止：{run.stopped_reason}")
