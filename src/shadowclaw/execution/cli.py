@@ -290,11 +290,15 @@ async def _cmd_iterate(args: argparse.Namespace) -> int:
         model_label = args.model
         config = replace(config, model=args.model)
 
-    result = await run_iteration(
-        cases=cases, harness_dir=config.harness_dir, eval_dir=eval_dir,
-        config=config, unit_factory=factory, round_id=args.round,
-        apply_merge=apply_merge, model_label=model_label,
-        samples=args.samples)
+    try:
+        result = await run_iteration(
+            cases=cases, harness_dir=config.harness_dir, eval_dir=eval_dir,
+            config=config, unit_factory=factory, round_id=args.round,
+            apply_merge=apply_merge, model_label=model_label,
+            samples=args.samples, overwrite=args.force)
+    except FileExistsError as exc:
+        print(f"拒绝执行：{exc}")
+        return 2
     store = SignalStore(eval_dir / "signals" / "signals.jsonl")
     report = render_iteration_report(
         result, signal_counts=store.count_by_kind(),
@@ -408,7 +412,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="用 MockUnit 离线验回路（不合入正本）")
     p_iter.add_argument("--model", default="google/gemini-3.8-flash",
                         help="OpenRouter 模型 slug（默认 google/gemini-3.8-flash）")
-    p_iter.add_argument("--round", default="001", help="轮次号（默认 001）")
+    p_iter.add_argument("--round", required=True,
+                        help="轮次号（必填；已有档案的轮次拒绝覆盖，"
+                             "除非 --force）")
+    p_iter.add_argument("--force", action="store_true",
+                        help="显式覆盖已有轮次档案（危险，须自知）")
     p_iter.add_argument("--samples", type=int, default=1,
                         help="每侧每案采样轮数（默认 1；后续轮次用 2）")
     p_iter.add_argument("--eval-dir", help="评估层数据目录（默认仓库根 evaluation/）")

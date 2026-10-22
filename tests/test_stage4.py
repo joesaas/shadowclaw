@@ -257,6 +257,28 @@ def test_generator_attribution_rules(tmp_path):
 
 # ---------------------------------------------------------- iterate 回路
 
+def test_iterate_refuses_to_overwrite_existing_round(tmp_path):
+    """轮次档案防覆盖（2026-10-22）：同 round_id 二次运行默认拒绝，
+    overwrite=True 才放行。此前默认值 001 曾让冒烟误跑覆盖真实档案。"""
+    import pytest as _pytest
+    harness_copy, eval_dir, config = _setup_iter_env(tmp_path)
+    cases = load_cases(CASES_DIR)
+
+    def factory(case, assembled):  # noqa: ANN001
+        return MockUnit("shadow-solver",
+                        UnitResult(text=_crafted_answer(case),
+                                   tokens_in=10, tokens_out=10),
+                        model="mock",
+                        instruction=assembled.render_instruction())
+
+    kwargs = dict(cases=cases, harness_dir=harness_copy, eval_dir=eval_dir,
+                  config=config, unit_factory=factory, round_id="guard1")
+    asyncio.run(run_iteration(**kwargs))
+    with _pytest.raises(FileExistsError):
+        asyncio.run(run_iteration(**kwargs))
+    asyncio.run(run_iteration(**kwargs, overwrite=True))
+
+
 def _crafted_answer(case) -> str:  # noqa: ANN001
     parts = ["结论（推断）：根因涉及"]
     parts += [g[0] for g in case.root_cause_groups]

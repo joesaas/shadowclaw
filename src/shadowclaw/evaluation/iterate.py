@@ -247,18 +247,27 @@ def persist_round(result: IterationResult, round_dir: Path) -> None:
 async def run_iteration(*, cases: list[RegressionCase],
                         harness_dir: Path, eval_dir: Path,
                         config: Config, unit_factory: UnitFactory,
-                        round_id: str = "001",
+                        round_id: str,
                         apply_merge: bool = True,
                         model_label: str = "",
-                        samples: int = 1) -> IterationResult:
+                        samples: int = 1,
+                        overwrite: bool = False) -> IterationResult:
     """转满一轮：基线 → 提案 → 候选 → 判定 → 合入/拒绝。
 
     samples：每侧每案采样轮数（默认 1；后续轮次用 2 压采样波动，
     聚合口径见模块 docstring 与 aggregate_case_scores）。
+
+    round_id 必填、无默认（2026-10-22 li 定）：轮次目录是冻结档案，
+    默认值曾导致冒烟误跑覆盖第 001 轮档案。已有 iteration.json 的
+    轮次默认拒绝重跑，须 overwrite=True 显式覆盖。
     """
     harness_dir = Path(harness_dir)
     eval_dir = Path(eval_dir)
     round_dir = eval_dir / "iterations" / round_id
+    if not overwrite and (round_dir / "iteration.json").exists():
+        raise FileExistsError(
+            f"轮次 {round_id} 已有档案（{round_dir}/iteration.json），"
+            "拒绝覆盖；换新轮次号，或显式 overwrite/--force 重跑")
     round_dir.mkdir(parents=True, exist_ok=True)
     result = IterationResult(round_id=round_id,
                              harness_version=config.harness_version,
