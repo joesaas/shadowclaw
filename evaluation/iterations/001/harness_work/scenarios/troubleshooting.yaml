@@ -1,0 +1,32 @@
+# 场景 · 排障（troubleshooting）
+#
+# 场景是运行时组装驾驭视图的唯一入口（驾驭层设计 Step 2/3）：
+# 给一个任务先定场景，其余五件（原则/手册/记忆/工具/护栏）都经这里装配，
+# 不许绕过场景零散拼凑。护栏合并从严：场景档位只能收紧全局护栏，不能放宽。
+
+name: troubleshooting
+display_name: 排障场景
+
+# 原则：全量注入，永远排在每个单元 instruction 的最前面，不参与检索、不裁剪。
+principles: all
+
+# 手册：执行单元拿全文；规划者只看摘要（frontmatter + 适用场景 + 步骤标题）。
+playbook: troubleshooting
+
+# 记忆：core 常驻全量；其余按任务关键词检索后注入。
+memory:
+  resident: core
+  searchable: [facts, people, projects, decisions, inferences]
+
+# 工具：引用的工具卡 + 本场景的风险上限（上限之上的操作不挂载）。
+tools:
+  github:
+    card: github.md
+    max_risk: read
+
+# 护栏：全局 guardrails.md 为底，合并规则从严。
+guardrails:
+  merge: strictest
+
+# 预算顶：本场景单任务花费上限（美元），与护栏预算顶取更严者。
+budget_limit_usd: 5.0
