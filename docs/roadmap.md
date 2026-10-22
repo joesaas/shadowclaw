@@ -54,6 +54,7 @@
 
 - 按场景逐个从影子升格分身（先排障，后调研、文档、Jira）；补齐路由、并行、反思原语；接入剩余工具；迁 EC2 并接 Telegram 渠道；主动性最后开、默认关、逐项启用。
 - 验收：每场景转正前过影子复检；出问题可退回影子模式。
+- **补注（2026-10-22，li 裁剪范围后落地）**：已完成——①三原语补齐（route 规则路由 + route_decided 留痕；parallel 隔离并发 + 单写者合并 + 失败隔离；reflect 规则检查清单 + critic 占位，打回重跑默认 2 轮、超限判失败），Plan schema 与校验、规划者原语说明同步；②转正机制（场景 mode 开关 shadow/autonomous + evaluation/promotion.py 三项门槛：无退步记录 / 真实任务双跑样本 ≥5 只数 real / li 批准台账 promotions.jsonl 只追加；未过门 autonomous 加载即拒）；③主动性开关（harness/proactivity.yaml + 登记表校验，全默认 off，不建触发器）。排障场景转正现状：三项全差（001 轮退步记录在案、真实双跑样本 0/5、无批准记录），维持 shadow。**裁剪暂缓（li 2026-10-22 明示）**：迁 EC2、接 Telegram 渠道、GitHub 真实联调、接入剩余工具（含 Jira）——均不在本阶段范围，待 li 另行发令。详见 reports/stage5-report.md。
 
 ### 持续运营
 

@@ -7,6 +7,12 @@
 name: troubleshooting
 display_name: 排障场景
 
+# 运行模式（阶段 5）：shadow = 只对照出方案不动手；autonomous = 转正为
+# 分身、允许真正执行工具调用（护栏审批一件不减）。改成 autonomous 须先
+# 过评估层转正门槛（evaluation/promotion.py：无回归退步记录 + 真实任务
+# 双跑样本达标 + li 批准记录），未过门时加载即被拒（fail-closed）。
+mode: shadow
+
 # 原则：全量注入，永远排在每个单元 instruction 的最前面，不参与检索、不裁剪。
 principles: all
 

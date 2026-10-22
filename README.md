@@ -127,3 +127,27 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 **测法升级（2026-10-21，li 拍板 (a)+(c)：先解决测不准，拒绝门槛不动）**：根因命中判定改为「结论段优先、全答复兜底」（结论段抽不到时在全答复用同义组核查，仍须全中，严格度不变，两侧同等适用）；新增离线重判 `shadowclaw rejudge <round_dir>`（当前仪表对存档答复对称重判，零花费）；iterate 两侧支持 `--samples N`（聚合口径：命中取严格多数、覆盖取中位数.5 向下取整、原则错误任一轮即记）。第 001 轮离线重判（`evaluation/iterations/001/rejudge-001.md`）：github 退步经语义兜底消除（属仪表漏接，源于其生成的 correction 候选 sig-78a40fd166 标注「经重判否定」），telegram 覆盖退步仍成立，整轮拒绝维持；原 rejected 判定记录不改、手册正本不动，是否翻案待 li 定。
 
 **如实标注**：本轮真实回放被 OpenRouter key 的上限拦下，未产生效果结论——组装提示词 23,023 tokens 超过该 key 允许的提示上限 12,970 tokens（首次尝试另遇 402 预留额度，压小 max_tokens 预留后仍被提示上限拦下）。组装提示含原则 + 手册全文是设计口径，不为省额度缩减；需 li 调高 key 限额或充值后重跑 `shadowclaw shadow` 即可续。报告中 6 案例为 1 失败 + 5 未跑，原则性错误一项标「未能判定」，不作验收通过结论。信号账本本轮未写入（无跑完案例）。
+
+## 阶段 5 已实现（转正与扩展，范围经 li 裁剪）
+
+形态：五原语齐套 + 影子转分身的转正机制 + 主动性开关（默认关）。**范围裁剪（li 2026-10-22 口径）**：Telegram 接入、EC2 迁移、GitHub 真实联调本阶段不做，暂缓。
+
+| 件 | 内容 |
+|---|---|
+| 三新原语（`execution/plan.py` + `orchestrator.py`） | **route**：规则（source=prev_output/input/facts + contains）自上而下首中即选、全不中走 default、无 default 本步失败；选择过程记 `route_decided`（命中规则/选中/落选）。**parallel**：branches 并发（asyncio 协程池，上限 4）、各分支隔离事实板、产出经父板单写者按计划顺序合并（冲突按既有 guard 口径拒落板）；单分支失败隔离标明、全失败才算本步失败。**reflect**：产出过规则检查清单（contains/not_contains/min_length/max_length/fact_proposed）+ 可选 critic 单元自评占位，打回带反馈重跑、默认最多 2 轮、超限按失败处理；草稿轮事实提议不落真板。Plan schema 扩展字段（route/branches/checklist/max_rounds/critic）与校验三拒口径同步落地，规划者视图（`assembler.planner_view`）附五原语说明 |
+| 场景模式（`harness/loader.py`、`assembler.py`） | 场景 yaml 新增 `mode`（shadow 缺省 / autonomous），组装产出带 mode 分流。autonomous 允许真正执行工具调用，但护栏审批一件不减（write/irreversible 仍 ASK、forbidden 仍 DENY、fail-closed 不变） |
+| 转正门（`evaluation/promotion.py` + CLI `promotion`） | 场景转正须三项同时满足：①迭代档案无回归退步记录；②真实任务影子双跑样本 ≥ 阈值（默认 5；只数信号账本中 sample_kind=real 且 origin=live_task 的样本，回放与 Mock 样本不计数）；③台账 `evaluation/promotions.jsonl`（只追加）有 li 批准记录。`promotion check` 逐项报差；`promotion approve` 即批准动作、须 li 本人在场执行，写入时附门槛快照；无批准/未过门时 autonomous 场景**加载即拒**（fail-closed，loader 经注入的 promotion_gate 核验） |
+| 主动性开关（`harness/proactivity.py` + `harness/proactivity.yaml`） | 条目登记表封闭（remind_pending / propose_iterations / sync_progress），未登记条目拒载；全部默认 off；开关只决定「可否被触发」，不建任何定时/后台触发器，启用须 li 单独发令 |
+| `execution/demo3.py` + CLI `demo3` | 三原语离线验收演示：定界 → 路由命中句柄专家 → 三路并行（一条冲突被拒、一路失败被隔离）→ 报告反思两轮过关 |
+
+### 跑法（阶段 5 增量）
+
+```bash
+.venv/bin/shadowclaw demo3                          # 三原语演示（离线）
+.venv/bin/shadowclaw promotion check troubleshooting  # 转正门槛现状（逐项报差）
+.venv/bin/shadowclaw promotion approve <场景>         # li 本人在场执行才有效力
+.venv/bin/shadowclaw promotion list                   # 批准台账
+.venv/bin/python -m pytest                            # 96 项测试（70 + 阶段 5 的 26）：95 过、1 项档案守护测试因阶段 5 施工事故失败（见 stage5-report 出入 7）
+```
+
+**转正门槛现状（如实）**：排障场景三项全差——①轮次 001 留有 2 条退步记录（整轮拒绝在案）；②真实任务双跑样本 0/5（账本里 12 条是历史回放样本，按口径不计数）；③台账无 li 批准记录。机制能逐项说清差什么，未为演示放水；场景维持 shadow。详见 `reports/stage5-report.md`。

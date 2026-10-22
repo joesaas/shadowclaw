@@ -1,6 +1,9 @@
 """轨迹：固定事件枚举 + SQLite 存储 + 复盘导出。
 
-事件类型是执行层→评估层的契约面，阶段 1 固定为下方 15 种，不随手新增。
+事件类型是执行层→评估层的契约面：阶段 1 固定 15 种；阶段 5 补三原语
+（route / parallel / reflect）时按执行层设计 Step 5 的编排类枚举补入
+route_decided / reflect_round / parallel_started / parallel_finished
+四种，此后仍不随手新增。
 每条事件带 run_id、时间戳、驾驭层版本号。花费口径：模型回报了就用回报值；
 没回报则按配置价格表以 token 估算并标 estimated=True，估不出来记 None。
 """
@@ -25,6 +28,10 @@ class EventType(str, Enum):
     TOOL_CALL = "tool_call"
     DELEGATE_STARTED = "delegate_started"
     DELEGATE_FINISHED = "delegate_finished"
+    ROUTE_DECIDED = "route_decided"
+    PARALLEL_STARTED = "parallel_started"
+    PARALLEL_FINISHED = "parallel_finished"
+    REFLECT_ROUND = "reflect_round"
     FACT_PROPOSED = "fact_proposed"
     FACT_COMMITTED = "fact_committed"
     APPROVAL_REQUESTED = "approval_requested"

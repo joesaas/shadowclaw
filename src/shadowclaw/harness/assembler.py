@@ -32,6 +32,7 @@ class AssembledContext:
     memory_hits: list[MemoryEntry] = field(default_factory=list)
     approval_policy: GuardrailPolicy | None = None
     budget_limit: float | None = None   # 合并从严后的单任务预算顶
+    mode: str = "shadow"                # 场景运行模式（阶段 5）：组装/执行按此分流
 
     def render_instruction(self) -> str:
         """单元 instruction 的固定拼装顺序：原则 → 核心记忆 → 手册 →
@@ -49,12 +50,16 @@ class AssembledContext:
         return "\n\n".join(parts)
 
     def planner_view(self) -> str:
-        """规划者视图：原则 + 手册摘要 + 工具卡摘要（不给手册全文）。"""
+        """规划者视图：原则 + 手册摘要 + 工具卡摘要 + 原语说明
+        （不给手册全文）。原语说明与 plan.PRIMITIVES_GUIDE 同源，
+        五原语齐套后规划者据此拼 Plan。"""
+        from ..execution.plan import PRIMITIVES_GUIDE
         parts = [self.principles.strip()]
         if self.playbook_summary.strip():
             parts.append(self.playbook_summary.strip())
         if self.tool_summaries:
             parts.append("## 工具卡摘要\n" + "\n".join(self.tool_summaries))
+        parts.append("## 可用编排原语\n" + PRIMITIVES_GUIDE.strip())
         return "\n\n".join(parts)
 
     def memory_texts(self) -> list[str]:
@@ -127,6 +132,7 @@ def assemble(bundle: HarnessBundle, *, query: str = "",
     return AssembledContext(
         scenario_name=scenario.name,
         harness_version=bundle.version,
+        mode=scenario.mode,
         principles=bundle.principles_text,
         identity=bundle.identity_text,
         core_memory=bundle.core_memory,

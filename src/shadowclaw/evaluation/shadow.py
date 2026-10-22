@@ -328,7 +328,8 @@ async def run_shadow(*, cases: list[RegressionCase], bundle: HarnessBundle,
                     quota_stop = True
                     run.stopped_reason = ("judge 调用遇额度错误（402 类），"
                                           "已按纪律停止后续案例")
-        _write_signals(signal_store, case, cr, bundle.version, run)
+        _write_signals(signal_store, case, cr, bundle.version, run,
+                       scenario=bundle.scenario.name)
         run.cases.append(cr)
     return run
 
@@ -338,11 +339,21 @@ def _bump(run: ShadowRun, kind: str) -> None:
 
 
 def _write_signals(store: SignalStore, case: RegressionCase, cr: CaseRun,
-                   harness_version: str, run: ShadowRun) -> None:
+                   harness_version: str, run: ShadowRun, *,
+                   scenario: str = "troubleshooting") -> None:
     """信号入账（范围 D）：每案例一条 outcome；结论与参照不符或有原则性
-    错误时再产一条 correction 候选——出处写明回放对照，非 li 亲口纠正。"""
+    错误时再产一条 correction 候选——出处写明回放对照，非 li 亲口纠正。
+
+    样本分类标记（阶段 5 转正门计数用，见 promotion.classify_sample）：
+    scenario = 场景名；sample_kind = mock（--mock 演练）/ real（真实
+    模型运行）。本运行器是历史回放，origin 恒为 replay_contrast——
+    转正门只数真实任务同步双跑（origin=live_task），回放样本不计数。
+    """
     assert cr.check is not None
     check = cr.check
+    stamps = {"scenario": scenario,
+              "sample_kind": "mock" if run.model_label == "mock"
+              else "real"}
     store.append(Signal(
         kind="outcome", source="shadow-replay", trace_id=cr.run_id,
         task=case.title, harness_version=harness_version,
@@ -351,7 +362,8 @@ def _write_signals(store: SignalStore, case: RegressionCase, cr: CaseRun,
                  f"{check.actions_total}，原则性错误 "
                  f"{len(check.principle_errors)} 条"),
         reference=f"参照解出处：{case.source}；案例 {case.id}",
-        extra={"case_id": case.id, "origin": "replay_contrast"}))
+        extra={"case_id": case.id, "origin": "replay_contrast",
+               **stamps}))
     _bump(run, "outcome")
     if (not check.conclusion_hit) or check.principle_errors:
         store.append(Signal(
@@ -363,6 +375,7 @@ def _write_signals(store: SignalStore, case: RegressionCase, cr: CaseRun,
             reference=(f"参照解出处：{case.source}；参照根因："
                        f"{case.root_cause}"),
             extra={"case_id": case.id, "origin": "replay_contrast",
+                   **stamps,
                    "credibility": "回放对照生成，可信度低于 li 本人 "
                                   "correction，阶段 4 提炼时须降权"}))
         _bump(run, "correction")
@@ -375,7 +388,7 @@ def _write_signals(store: SignalStore, case: RegressionCase, cr: CaseRun,
                      f"score={cr.judge.get('score')}，"
                      f"{cr.judge.get('comment', '')}"),
             reference=f"案例 {case.id}，run {cr.run_id}",
-            extra={"case_id": case.id,
+            extra={"case_id": case.id, **stamps,
                    "hard_check_hit": check.conclusion_hit,
                    "agrees_with_hard_check":
                        cr.judge.get("hit") == check.conclusion_hit}))

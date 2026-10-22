@@ -56,9 +56,22 @@ def test_step_budgets_over_plan_limit_rejected():
 
 
 def test_reserved_primitive_is_not_implemented_not_illegal():
-    plan = Plan(id="p", steps=[Step(id="s1", primitive="route", unit="a")])
-    problems = validate_plan(plan, UNITS, budget_hard_cap=CAP)
-    assert kinds(problems) == {"not_implemented"}
+    # 阶段 5 更新：route/parallel/reflect 已全部实现，本测试原断言
+    # （route 报 not_implemented）的前提消失，改为断言三原语的合法
+    # 形状能过校验；not_implemented 种类保留给将来预留的新原语。
+    route = Plan(id="p", steps=[Step(
+        id="s1", primitive="route",
+        route={"rules": [{"when": {"source": "input", "contains": "x"},
+                          "unit": "a"}], "default": "b"})])
+    assert validate_plan(route, UNITS, budget_hard_cap=CAP) == []
+    parallel = Plan(id="p", steps=[Step(
+        id="s1", primitive="parallel",
+        branches=[Step(id="b1", unit="a"), Step(id="b2", unit="b")])])
+    assert validate_plan(parallel, UNITS, budget_hard_cap=CAP) == []
+    reflect = Plan(id="p", steps=[Step(
+        id="s1", primitive="reflect", unit="a",
+        checklist=["contains:x"], max_rounds=2)])
+    assert validate_plan(reflect, UNITS, budget_hard_cap=CAP) == []
 
 
 def test_bogus_primitive_is_illegal():

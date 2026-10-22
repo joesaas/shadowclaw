@@ -36,6 +36,12 @@ class ToolCard:
         return [op for op, level in self.operations if level == risk]
 
 
+# 场景运行模式（阶段 5 影子转分身）：shadow = 只对照出方案不动手；
+# autonomous = 允许真正执行工具调用（护栏审批一件不减、fail-closed）。
+# 缺省 shadow——转正不是默认状态，是挣来的状态。
+SCENARIO_MODES = ("shadow", "autonomous")
+
+
 @dataclass
 class Scenario:
     name: str
@@ -44,6 +50,7 @@ class Scenario:
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     memory_searchable: list[str] = field(default_factory=list)
     budget_limit_usd: float | None = None
+    mode: str = "shadow"                        # shadow / autonomous
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -59,6 +66,7 @@ class HarnessBundle:
     playbooks: dict[str, str]                   # 活类 -> 手册全文
     tool_cards: dict[str, ToolCard]             # 工具名 -> 工具卡
     core_memory: str                            # memory/core.md 全文
+    proactivity: Any = None                     # ProactivityConfig（阶段 5）
 
 
 # ------------------------------------------------------------------- 版本号
@@ -152,6 +160,11 @@ def _load_scenario(root: Path, scenario_name: str) -> Scenario:
         raise HarnessError(f"场景文件不存在：{path}")
     raw = yaml.safe_load(path.read_text("utf-8")) or {}
     memory = raw.get("memory") or {}
+    mode = str(raw.get("mode") or "shadow")
+    if mode not in SCENARIO_MODES:
+        raise HarnessError(
+            f"场景 {scenario_name} 的 mode 取值非法：{mode!r}"
+            f"（合法集：{'/'.join(SCENARIO_MODES)}，缺省 shadow）")
     return Scenario(
         name=raw.get("name", scenario_name),
         display_name=raw.get("display_name", ""),
@@ -159,12 +172,21 @@ def _load_scenario(root: Path, scenario_name: str) -> Scenario:
         tools=raw.get("tools") or {},
         memory_searchable=list(memory.get("searchable") or []),
         budget_limit_usd=raw.get("budget_limit_usd"),
+        mode=mode,
         raw=raw)
 
 
 # ------------------------------------------------------------------- 入口
-def load_harness(root: Path | str, scenario_name: str) -> HarnessBundle:
-    """按场景加载驾驭层正本；任何引用缺失/校验不过都在此报错。"""
+def load_harness(root: Path | str, scenario_name: str, *,
+                 promotion_gate=None) -> HarnessBundle:
+    """按场景加载驾驭层正本；任何引用缺失/校验不过都在此报错。
+
+    promotion_gate（阶段 5，依赖注入）：场景 mode=autonomous 时的
+    转正门槛核验函数，签名 gate(scenario) -> None，过门才返回、
+    不过门抛异常（评估层 evaluation.promotion.ensure_promoted）。
+    autonomous 场景未注入 gate 时直接拒载（fail-closed）：分身模式
+    不许在无核验的情况下被任何路径加载起来。shadow 场景不查 gate。
+    """
     root = Path(root)
     if not root.is_dir():
         raise HarnessError(f"harness 目录不存在：{root}")
@@ -183,6 +205,14 @@ def load_harness(root: Path | str, scenario_name: str) -> HarnessBundle:
     guardrails_policy = _extract_yaml_block(guardrails_body)
 
     scenario = _load_scenario(root, scenario_name)
+    if scenario.mode == "autonomous":
+        if promotion_gate is None:
+            raise HarnessError(
+                f"场景 {scenario.name} 声明 autonomous 模式，但加载时"
+                "未提供转正门槛核验（promotion_gate），fail-closed "
+                "拒载：先过 evaluation.promotion 的转正门槛并注入核验"
+                "函数后再加载")
+        promotion_gate(scenario)      # 不过门由 gate 抛错，人话原因在门里
 
     playbooks: dict[str, str] = {}
     playbook_path = root / "playbooks" / f"{scenario.playbook}.md"
@@ -206,6 +236,11 @@ def load_harness(root: Path | str, scenario_name: str) -> HarnessBundle:
     if not core_path.exists():
         raise HarnessError(f"核心记忆不存在：{core_path}")
 
+    # 主动性配置（阶段 5）：惰性导入避免与 proactivity 的循环依赖；
+    # 文件缺失 = 全关默认，未登记条目在 load_proactivity 里拒载。
+    from .proactivity import load_proactivity
+    proactivity = load_proactivity(root)
+
     return HarnessBundle(
         root=root,
         version=compute_harness_version(root),
@@ -216,4 +251,5 @@ def load_harness(root: Path | str, scenario_name: str) -> HarnessBundle:
         scenario=scenario,
         playbooks=playbooks,
         tool_cards=tool_cards,
-        core_memory=core_path.read_text("utf-8"))
+        core_memory=core_path.read_text("utf-8"),
+        proactivity=proactivity)

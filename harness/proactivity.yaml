@@ -1,0 +1,14 @@
+# 主动性开关（阶段 5）：全部默认 off，逐项启用须 li 发令。
+#
+# 开关只决定「机制可不可以被触发」；本项目不建任何定时/后台触发器，
+# 没有 li 的单独发令，任何条目都不会自己动起来。条目登记表在
+# src/shadowclaw/harness/proactivity.py（KNOWN_ITEMS），本文件只能
+# 开关已登记条目，写未登记条目会被加载器拒载。
+
+items:
+  remind_pending:        # 主动提醒未决事项
+    enabled: false
+  propose_iterations:    # 主动提出迭代提案
+    enabled: false
+  sync_progress:         # 主动同步进展
+    enabled: false

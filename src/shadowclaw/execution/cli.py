@@ -15,6 +15,16 @@
   shadowclaw rejudge <round_dir>      离线重判：当前仪表对某轮存档答复
                                       对称重判（不调模型），产出轮次
                                       目录下 rejudge-<round>.md
+  shadowclaw demo3                    阶段 5 验收演示：route / parallel
+                                      / reflect 三新原语离线跑通
+  shadowclaw promotion check <场景>   阶段 5 转正门：核验某场景三项
+                                      门槛现状（无退步记录 / 真实双跑
+                                      样本 / li 批准记录），差哪几项
+                                      逐项报出
+  shadowclaw promotion approve <场景> 写入 li 的批准记录（台账只追加）；
+                                      本命令本身即批准动作，须 li 本人
+                                      在场执行才有效力
+  shadowclaw promotion list           列出批准台账全部记录
   shadowclaw replay <run_id>          按轨迹复盘打印时间线
   shadowclaw resume <run_id>          从检查点续跑（单元注册表用 demo 集，
                                       阶段 1 范围；真实场景注册表随阶段 2）
@@ -32,6 +42,7 @@ from .checkpoint import SqliteCheckpointStore
 from .config import Config
 from .demo import DEMO_TASK, build_demo_plan, build_demo_registry
 from .demo2 import run_demo2
+from .demo3 import run_demo3
 from .orchestrator import Orchestrator
 from .plan import Plan
 from .trajectory import SqliteTrajectoryStore
@@ -81,6 +92,72 @@ async def _cmd_demo2(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_demo3(args: argparse.Namespace) -> int:
+    config = Config.from_env()
+    run = await run_demo3(config)
+    result = run.result
+    print(f"run_id: {result.run_id}")
+    print(f"status: {result.status} 花费：${result.spent:.4f}")
+    for out in result.outputs:
+        print(f"\n[{out.step_id}] {out.unit_id}:\n{out.text}")
+    print(f"\n并行合并冲突：{len(run.guard.conflicts)} 条"
+          "（同键异值后到者拒落板，预期 1 条）")
+    print(f"复盘：shadowclaw replay {result.run_id}")
+    return 0 if result.status == "success" else 1
+
+
+def _eval_dir_of(args: argparse.Namespace) -> Path:
+    repo_root = Path(__file__).resolve().parents[3]
+    return Path(args.eval_dir) if getattr(args, "eval_dir", None) \
+        else repo_root / "evaluation"
+
+
+def _cmd_promotion(args: argparse.Namespace) -> int:
+    """转正门子命令组。approve 的效力口径：命令本身即 li 的批准动作——
+
+    只有 li 本人在场执行时写入的记录才算数；记录写入时附门槛核验
+    快照。写入批准不等于已转正：生效与否以 check 三项实时核验为准。
+    """
+    from ..evaluation.promotion import (check_promotion, list_promotions,
+                                        record_approval)
+    eval_dir = _eval_dir_of(args)
+    if args.action == "list":
+        records = list_promotions(eval_dir)
+        if not records:
+            print("批准台账为空（尚无任何场景的批准记录）。")
+            return 0
+        for rec in records:
+            snap = rec.get("gate_snapshot") or {}
+            print(f"- {rec.get('scenario')} · {rec.get('approved_at')} · "
+                  f"批准人 {rec.get('approved_by')} · "
+                  f"来源 {rec.get('source')} · "
+                  f"批准时门槛全过：{snap.get('ok')}")
+        return 0
+    check = check_promotion(args.scenario, eval_dir=eval_dir,
+                            min_samples=args.min_samples)
+    if args.action == "check":
+        for item in check.items:
+            print(f"[{'过' if item.ok else '差'}] {item.name}：{item.detail}")
+        print(f"结论：场景 {args.scenario} "
+              f"{'已过转正门槛' if check.ok else '未过转正门槛'}"
+              f"（差 {len(check.unmet())} 项）")
+        return 0 if check.ok else 1
+    # approve
+    record = record_approval(eval_dir, args.scenario, check)
+    print(f"已写入批准记录：{record['scenario']} · "
+          f"{record['approved_at']} · 来源 {record['source']}")
+    after = check_promotion(args.scenario, eval_dir=eval_dir,
+                            min_samples=args.min_samples)
+    if after.ok:
+        print("三项门槛现已全过：该场景可按 autonomous 模式加载运行。")
+    else:
+        print("批准已在案，但转正尚未生效，还差：")
+        for item in after.items:
+            if not item.ok:
+                print(f"- {item.name}：{item.detail}")
+    return 0
+
+
 async def _cmd_resume(args: argparse.Namespace) -> int:
     config = Config.from_env()
     orchestrator = build_orchestrator(config)
@@ -102,6 +179,7 @@ async def _cmd_shadow(args: argparse.Namespace) -> int:
     from dataclasses import replace
     from datetime import datetime, timezone
 
+    from ..evaluation.promotion import gate_for
     from ..evaluation.regression import load_cases
     from ..evaluation.shadow import (build_judge_fn, build_real_unit_factory,
                                      ensure_openrouter_api_key,
@@ -113,7 +191,8 @@ async def _cmd_shadow(args: argparse.Namespace) -> int:
     eval_dir = Path(args.eval_dir) if args.eval_dir else repo_root / "evaluation"
     cases = load_cases(eval_dir / "regression" / "cases")
     config = Config.from_env()
-    bundle = load_harness(config.harness_dir, "troubleshooting")
+    bundle = load_harness(config.harness_dir, "troubleshooting",
+                          promotion_gate=gate_for(eval_dir))
 
     if args.mock:
         from .contracts import UnitResult
@@ -172,6 +251,7 @@ async def _cmd_iterate(args: argparse.Namespace) -> int:
     from datetime import datetime, timezone
 
     from ..evaluation.iterate import render_iteration_report, run_iteration
+    from ..evaluation.promotion import gate_for
     from ..evaluation.regression import load_cases
     from ..evaluation.shadow import (build_real_unit_factory,
                                      ensure_openrouter_api_key)
@@ -182,7 +262,8 @@ async def _cmd_iterate(args: argparse.Namespace) -> int:
     eval_dir = Path(args.eval_dir) if args.eval_dir else repo_root / "evaluation"
     cases = load_cases(eval_dir / "regression" / "cases")
     config = Config.from_env()
-    bundle = load_harness(config.harness_dir, "troubleshooting")
+    bundle = load_harness(config.harness_dir, "troubleshooting",
+                          promotion_gate=gate_for(eval_dir))
     config = replace(config, harness_version=bundle.version)
 
     if args.mock:
@@ -332,6 +413,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="每侧每案采样轮数（默认 1；后续轮次用 2）")
     p_iter.add_argument("--eval-dir", help="评估层数据目录（默认仓库根 evaluation/）")
     p_iter.add_argument("--out", help="迭代报告输出路径")
+    sub.add_parser("demo3", help="阶段 5 验收演示（三新原语离线跑通）")
+    p_promo = sub.add_parser("promotion", help="阶段 5 转正门（check/approve/list）")
+    promo_sub = p_promo.add_subparsers(dest="action", required=True)
+    for action, help_text in (
+            ("check", "核验某场景转正门槛现状"),
+            ("approve", "写入 li 批准记录（须 li 本人在场执行）")):
+        p_one = promo_sub.add_parser(action, help=help_text)
+        p_one.add_argument("scenario", help="场景名，如 troubleshooting")
+        p_one.add_argument("--min-samples", type=int, default=5,
+                           help="真实双跑样本门槛（默认 5）")
+        p_one.add_argument("--eval-dir",
+                           help="评估层数据目录（默认仓库根 evaluation/）")
+    p_list = promo_sub.add_parser("list", help="列出批准台账")
+    p_list.add_argument("--eval-dir",
+                        help="评估层数据目录（默认仓库根 evaluation/）")
     p_rejudge = sub.add_parser("rejudge", help="离线重判某轮存档答复（不调模型）")
     p_rejudge.add_argument("round_dir", help="轮次目录，如 evaluation/iterations/001")
     p_rejudge.add_argument("--cases-dir", help="回归集案例目录（默认按轮次目录推导）")
@@ -345,6 +441,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_run(args))
     if args.command == "demo2":
         return asyncio.run(_cmd_demo2(args))
+    if args.command == "demo3":
+        return asyncio.run(_cmd_demo3(args))
+    if args.command == "promotion":
+        return _cmd_promotion(args)
     if args.command == "shadow":
         return asyncio.run(_cmd_shadow(args))
     if args.command == "iterate":
